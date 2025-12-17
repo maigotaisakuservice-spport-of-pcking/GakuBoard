@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAKU-Board 画面共有</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+
+    <!-- PeerJS -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <style>
+        body, html { margin: 0; height: 100%; background: #2f2f2f; color: white; display:flex; flex-direction:column;}
+
+        .toolbar {
+            height: 60px; background: #202020; display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
+        }
+
+        #video-container {
+            flex: 1; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative;
+        }
+
+        video {
+            max-width: 100%; max-height: 100%;
+            background: black;
+        }
+
+        .status-badge {
+            background: #e74c3c; color: white; padding: 5px 10px; border-radius: 4px; font-size: 0.8em; font-weight: bold;
+        }
+        .status-badge.active { background: #2ecc71; }
+
+        .control-panel {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 30px;
+            display: flex; gap: 15px;
+        }
+
+        .btn-circle {
+            width: 50px; height: 50px; border-radius: 50%; border: none; font-size: 1.2em;
+            cursor: pointer; display: flex; justify-content: center; align-items: center;
+            transition: transform 0.2s;
+        }
+        .btn-circle:hover { transform: scale(1.1); }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-success { background: #2ecc71; color: white; }
+
+        #msgOverlay {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <div style="display:flex; align-items:center; gap:10px;">
+            <button onclick="exitSession()" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> 退出</button>
+            <h3 style="margin:0;">画面共有セッション</h3>
+        </div>
+        <div>
+            <span id="roleDisplay">Checking role...</span>
+            <span id="statusBadge" class="status-badge">Connecting</span>
+        </div>
+    </div>
+
+    <div id="video-container">
+        <div id="msgOverlay">
+            <i class="fas fa-desktop fa-3x"></i>
+            <p id="overlayText">接続待機中...</p>
+        </div>
+        <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+
+    <!-- Controls for Presenter -->
+    <div id="presenterControls" class="control-panel" style="display:none;">
+        <button class="btn-circle btn-success" onclick="startScreenShare()" title="画面共有開始">
+            <i class="fas fa-play"></i>
+        </button>
+        <button class="btn-circle btn-danger" onclick="stopScreenShare()" title="停止">
+            <i class="fas fa-stop"></i>
+        </button>
+    </div>
+
+    <!-- Controls for Teacher (Permission) -->
+    <div id="teacherControls" class="control-panel" style="display:none; bottom: 90px;">
+        <button class="btn btn-secondary" onclick="toggleStudentPermission()" id="permBtn">
+            生徒の共有を許可: OFF
+        </button>
+    </div>
+
+    <!-- Controls for Student (Request) -->
+    <div id="studentControls" class="control-panel" style="display:none;">
+         <button class="btn-circle btn-primary" id="studentShareBtn" onclick="requestShare()" disabled title="共有権限がありません">
+            <i class="fas fa-share-square"></i>
+        </button>
+    </div>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const roomId = params.get('room');
+        const userRole = params.get('role');
+
+        let peer;
+        let myStream;
+        let currentPresenterId = null;
+        let myPeerId = null;
+        let currentUserData = null;
+
+        // Firestore Listener
+        let unsubscribe;
+
+        auth.onAuthStateChanged(async user => {
+            if(!user) { window.location.href = 'index.html'; return; }
+            // Get Name
+            const uDoc = await db.collection('users').doc(user.uid).get();
+            currentUserData = uDoc.data();
+
+            initApp();
+        });
+
+        async function initApp() {
+            document.getElementById('roleDisplay').textContent = userRole === 'teacher' ? '先生' : '生徒';
+
+            peer = new Peer();
+            peer.on('open', id => {
+                myPeerId = id;
+                console.log('My Peer ID:', id);
+                joinRoom(id);
+            });
+
+            // Handle Incoming Data Connections (Viewer requests stream)
+            peer.on('connection', conn => {
+                conn.on('data', data => {
+                    if (data.type === 'request_stream' && myStream) {
+                        console.log("Received stream request, calling back...");
+                        peer.call(conn.peer, myStream);
+                    }
+                });
+            });
+
+            // Handle Incoming Calls (Receiving Stream)
+            peer.on('call', call => {
+                console.log("Receiving call (stream)...");
+                call.answer(); // Answer without sending stream
+                call.on('stream', remoteStream => {
+                    document.getElementById('msgOverlay').style.display = 'none';
+                    const video = document.getElementById('remoteVideo');
+                    video.srcObject = remoteStream;
+                });
+            });
+        }
+
+        function joinRoom(id) {
+            const roomRef = db.collection('activities').where('roomId', '==', roomId);
+
+            unsubscribe = roomRef.onSnapshot(async snap => {
+                if(snap.empty) return;
+                const doc = snap.docs[0];
+                const data = doc.data();
+                const docRef = doc.ref;
+
+                // Handle Permissions
+                const studentCanShare = data.studentCanShare || false;
+
+                // --- Teacher Logic ---
+                if (userRole === 'teacher') {
+                    document.getElementById('teacherControls').style.display = 'flex';
+                    document.getElementById('presenterControls').style.display = 'flex';
+
+                    const btn = document.getElementById('permBtn');
+                    btn.textContent = `生徒の共有を許可: ${studentCanShare ? 'ON' : 'OFF'}`;
+                    btn.className = studentCanShare ? 'btn btn-action' : 'btn btn-secondary';
+                    btn.onclick = () => docRef.update({ studentCanShare: !studentCanShare });
+
+                    // Initial Host Setup if empty
+                    if(!data.presenterPeerId) {
+                        docRef.update({ presenterPeerId: myPeerId, presenterName: '先生' });
+                    }
+                }
+
+                // --- Student Logic ---
+                if (userRole === 'student') {
+                    const btn = document.getElementById('studentShareBtn');
+                    if (studentCanShare) {
+                        btn.disabled = false;
+                        btn.title = "画面共有を開始";
+                        document.getElementById('studentControls').style.display = 'flex';
+                    } else {
+                        btn.disabled = true;
+                        btn.title = "先生の許可が必要です";
+                        document.getElementById('studentControls').style.display = 'flex';
+                        // If I was sharing, stop?
+                        if (currentPresenterId === myPeerId && myStream) {
+                             stopScreenShare();
+                        }
+                    }
+                }
+
+                // --- Connection Logic (Everyone) ---
+                if (data.presenterPeerId && data.presenterPeerId !== currentPresenterId) {
+                    currentPresenterId = data.presenterPeerId;
+                    console.log('New Presenter:', currentPresenterId);
+
+                    if (currentPresenterId === myPeerId) {
+                        // I am the presenter
+                        document.getElementById('statusBadge').textContent = 'You are Presenting';
+                        document.getElementById('statusBadge').classList.add('active');
+                        document.getElementById('overlayText').textContent = '画面共有を開始してください';
+                        document.getElementById('presenterControls').style.display = 'flex';
+                    } else {
+                        // Someone else is presenting
+                        document.getElementById('statusBadge').textContent = `Viewing ${data.presenterName || 'Presenter'}`;
+                        document.getElementById('statusBadge').classList.remove('active');
+                        document.getElementById('overlayText').textContent = `${data.presenterName}の画面を待機中...`;
+
+                        // Hide my presenter controls if I'm not presenter
+                        if (userRole === 'student') {
+                             // Student control remains (to seize), but presenter controls (Stop/Play) hidden
+                             // Actually, only active presenter needs Stop/Play.
+                        }
+
+                        connectToPresenter(currentPresenterId);
+                    }
+                }
+            });
+        }
+
+        async function startScreenShare() {
+            try {
+                myStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+
+                const video = document.getElementById('remoteVideo');
+                video.srcObject = myStream;
+                video.muted = true; // Mute self
+                document.getElementById('msgOverlay').style.display = 'none';
+
+                // Update DB to claim Presenter role
+                if (currentPresenterId !== myPeerId) {
+                    db.collection('activities').where('roomId', '==', roomId).get().then(snap => {
+                        snap.docs[0].ref.update({
+                            presenterPeerId: myPeerId,
+                            presenterName: currentUserData.name
+                        });
+                    });
+                }
+
+                myStream.getVideoTracks()[0].onended = () => stopScreenShare();
+
+            } catch(e) {
+                console.error(e);
+                alert("共有開始エラー: " + e.message);
+            }
+        }
+
+        function stopScreenShare() {
+            if(myStream) {
+                myStream.getTracks().forEach(track => track.stop());
+                myStream = null;
+            }
+            const video = document.getElementById('remoteVideo');
+            video.srcObject = null;
+            document.getElementById('msgOverlay').style.display = 'block';
+            document.getElementById('overlayText').textContent = '共有停止中';
+
+            // Reset presenter? No, keep role until someone else takes it or session ends.
+        }
+
+        function connectToPresenter(destPeerId) {
+            // Initiate Data Connection to request stream
+            const conn = peer.connect(destPeerId);
+            conn.on('open', () => {
+                console.log("Connected to presenter signaling");
+                conn.send({ type: 'request_stream' });
+            });
+        }
+
+        function requestShare() {
+             startScreenShare();
+        }
+
+        function exitSession() {
+             window.history.back();
+        }
+
+    </script>
+</body>
+</html>

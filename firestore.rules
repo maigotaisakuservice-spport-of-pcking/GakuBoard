@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)) && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'super_admin';
+    }
+
+    function isTenantAdmin(tenantId) {
+       // Check if user is a teacher/admin for this tenant
+       // Assumes user profile has tenantId and role
+       return isAuthenticated() &&
+         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId == tenantId &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher');
+    }
+
+    // Super Admin collection
+    match /admins/{userId} {
+      allow read: if isAuthenticated(); // minimal read to check role
+      allow write: if isSuperAdmin();
+    }
+
+    // Tenants (Schools)
+    match /tenants/{tenantId} {
+      allow read: if true; // Login needs to read config (auth methods)
+      allow write: if isSuperAdmin(); // Only super admin can create/edit tenants
+    }
+
+    // Users (Students/Teachers)
+    match /users/{userId} {
+      // Allow read if:
+      // 1. Own profile (by UID)
+      // 2. Tenant Admin
+      // 3. User looking up their own email (Whitelist check flow)
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        (resource.data.tenantId != null && isTenantAdmin(resource.data.tenantId)) ||
+        resource.data.email == request.auth.token.email
+      );
+
+      allow write: if isAuthenticated() && (request.auth.uid == userId || (resource.data.tenantId != null && isTenantAdmin(resource.data.tenantId)));
+      allow create: if true; // Allow signup
+    }
+
+    // Classes
+    match /classes/{classId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isTenantAdmin(resource.data.tenantId);
+    }
+
+    // Activities (Votes, Suggestions, Whiteboard sessions)
+    match /activities/{activityId} {
+       allow read: if isAuthenticated();
+       allow write: if isAuthenticated();
+    }
+  }
+}

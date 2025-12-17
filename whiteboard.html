@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAKU-Board リアルタイムホワイトボード</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+
+    <!-- PeerJS -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <style>
+        body, html { margin: 0; overflow: hidden; height: 100%; background: #eee; }
+        #canvas-container {
+            position: absolute; top: 50px; left: 0; right: 0; bottom: 0;
+            background: white;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        canvas { display: block; }
+
+        .toolbar {
+            position: absolute; top: 0; left: 0; width: 100%; height: 50px;
+            background: #2c3e50; color: white; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; box-sizing: border-box;
+            z-index: 10;
+        }
+        .tool-group { display: flex; gap: 10px; }
+        .btn-tool {
+            background: #34495e; color: white; border: 1px solid #7f8c8d;
+            padding: 5px 10px; border-radius: 3px; cursor: pointer;
+        }
+        .btn-tool.active { background: #2ecc71; border-color: #27ae60; }
+
+        #statusDisplay { font-size: 0.8em; color: #bbb; }
+        .color-picker { width: 30px; height: 30px; padding: 0; border: none; }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <div class="tool-group">
+            <button onclick="exitBoard()" class="btn-tool"><i class="fas fa-arrow-left"></i> 退出</button>
+            <span id="roleDisplay" style="font-weight:bold; margin-top:5px;">Loading...</span>
+        </div>
+
+        <div class="tool-group">
+            <button class="btn-tool active" id="penBtn" onclick="setTool('pen')"><i class="fas fa-pen"></i></button>
+            <button class="btn-tool" id="eraserBtn" onclick="setTool('eraser')"><i class="fas fa-eraser"></i></button>
+            <input type="color" id="colorPicker" class="color-picker" value="#000000" onchange="setColor(this.value)">
+            <button class="btn-tool" onclick="clearBoard()"><i class="fas fa-trash"></i></button>
+        </div>
+
+        <div class="tool-group">
+            <span id="statusDisplay">Connecting...</span>
+            <button id="studentDrawToggle" class="btn-tool" style="display:none;" onclick="toggleStudentDraw()">
+                <i class="fas fa-pencil-alt"></i> 生徒書き込み: <span id="studentDrawStatus">OFF</span>
+            </button>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="whiteboard"></canvas>
+    </div>
+
+    <script>
+        // URL Params
+        const params = new URLSearchParams(window.location.search);
+        const roomId = params.get('room');
+        const role = params.get('role'); // 'teacher' or 'student'
+
+        // Canvas Setup
+        const canvas = document.getElementById('whiteboard');
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let currentTool = 'pen';
+        let currentColor = '#000000';
+        let currentWidth = 2;
+
+        // P2P State
+        let peer;
+        let connections = []; // Teacher: list of student conns. Student: [teacherConn]
+        let canDraw = (role === 'teacher'); // Default permission
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight - 50;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // ------------------
+        // Auth & Init
+        // ------------------
+        auth.onAuthStateChanged(async user => {
+            if (!user) {
+                window.location.href = 'index.html';
+                return;
+            }
+
+            document.getElementById('roleDisplay').textContent = role === 'teacher' ? '先生モード' : '生徒モード';
+
+            if (role === 'teacher') {
+                initTeacher(user);
+                document.getElementById('studentDrawToggle').style.display = 'block';
+            } else {
+                initStudent(user);
+            }
+        });
+
+        // ------------------
+        // PeerJS Setup
+        // ------------------
+        function initTeacher(user) {
+            // Teacher ID is consistent based on roomId to make it easy for students to connect?
+            // Actually, PeerJS IDs must be unique. Let's rely on Firestore to exchange IDs.
+
+            peer = new Peer(); // Auto-gen ID
+
+            peer.on('open', (id) => {
+                console.log('My Peer ID:', id);
+                document.getElementById('statusDisplay').textContent = 'Online (Waiting for students)';
+
+                // Save PeerID to Firestore Room
+                db.collection('activities').where('roomId', '==', roomId).get().then(snap => {
+                    if(!snap.empty) {
+                         snap.docs[0].ref.update({
+                             hostPeerId: id,
+                             studentCanDraw: false
+                         });
+                    }
+                });
+            });
+
+            peer.on('connection', (conn) => {
+                console.log('Student connected:', conn.peer);
+                connections.push(conn);
+
+                // Send current board state? (Advanced: implement history replay)
+                // For MVP, just new strokes.
+
+                conn.on('data', (data) => {
+                    // Receive data from student (if allowed)
+                    if (data.type === 'draw') {
+                        drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width);
+                        // Broadcast to other students
+                        broadcast(data, conn.peer);
+                    }
+                });
+
+                conn.on('close', () => {
+                    connections = connections.filter(c => c !== conn);
+                });
+            });
+        }
+
+        function initStudent(user) {
+            peer = new Peer();
+
+            peer.on('open', () => {
+                // Get Teacher's PeerID from Firestore
+                db.collection('activities').where('roomId', '==', roomId).onSnapshot(snap => {
+                    if(snap.empty) return;
+                    const data = snap.docs[0].data();
+                    const hostId = data.hostPeerId;
+
+                    // Update permissions
+                    if (data.studentCanDraw !== undefined) {
+                        canDraw = data.studentCanDraw;
+                        document.getElementById('statusDisplay').textContent =
+                            canDraw ? '書き込み可能' : '閲覧のみ';
+                    }
+
+                    if (hostId && (!connections.length || connections[0].peer !== hostId)) {
+                        connectToTeacher(hostId);
+                    }
+                });
+            });
+        }
+
+        function connectToTeacher(hostId) {
+            document.getElementById('statusDisplay').textContent = 'Connecting to Teacher...';
+            const conn = peer.connect(hostId);
+
+            conn.on('open', () => {
+                document.getElementById('statusDisplay').textContent = 'Connected to Class';
+                connections = [conn];
+            });
+
+            conn.on('data', (data) => {
+                if (data.type === 'draw') {
+                    drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width);
+                } else if (data.type === 'clear') {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+            });
+        }
+
+        // ------------------
+        // Drawing Logic
+        // ------------------
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            if (e.touches) {
+                return {
+                    x: e.touches[0].clientX - rect.left,
+                    y: e.touches[0].clientY - rect.top
+                };
+            }
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+
+        function startDraw(e) {
+            if (!canDraw) return;
+            drawing = true;
+            const pos = getPos(e);
+            lastX = pos.x;
+            lastY = pos.y;
+            e.preventDefault();
+        }
+
+        function moveDraw(e) {
+            if (!drawing || !canDraw) return;
+            e.preventDefault();
+            const pos = getPos(e);
+
+            drawOnCanvas(lastX, lastY, pos.x, pos.y, currentColor, currentWidth);
+
+            // Send Data
+            const data = {
+                type: 'draw',
+                x0: lastX, y0: lastY,
+                x1: pos.x, y1: pos.y,
+                color: currentColor,
+                width: currentWidth
+            };
+
+            if (role === 'teacher') {
+                broadcast(data);
+            } else {
+                // Send to teacher
+                if (connections.length > 0) connections[0].send(data);
+            }
+
+            lastX = pos.x;
+            lastY = pos.y;
+        }
+
+        function endDraw(e) {
+            drawing = false;
+        }
+
+        function drawOnCanvas(x0, y0, x1, y1, color, width) {
+            ctx.beginPath();
+            ctx.moveTo(x0, y0);
+            ctx.lineTo(x1, y1);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        // ------------------
+        // Networking Utils
+        // ------------------
+        function broadcast(data, excludePeerId = null) {
+            connections.forEach(conn => {
+                if (conn.peer !== excludePeerId) {
+                    conn.send(data);
+                }
+            });
+        }
+
+        // ------------------
+        // UI Actions
+        // ------------------
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+            if(tool === 'pen') {
+                document.getElementById('penBtn').classList.add('active');
+                currentColor = document.getElementById('colorPicker').value;
+                currentWidth = 2;
+                ctx.globalCompositeOperation = 'source-over';
+            } else {
+                document.getElementById('eraserBtn').classList.add('active');
+                currentColor = '#ffffff'; // Eraser acts as white paint for simplicity (or destination-out)
+                currentWidth = 20;
+                // ctx.globalCompositeOperation = 'destination-out'; // Better eraser
+            }
+        }
+
+        function setColor(color) {
+            setTool('pen');
+            currentColor = color;
+        }
+
+        function clearBoard() {
+            if (role !== 'teacher') return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            broadcast({ type: 'clear' });
+        }
+
+        function toggleStudentDraw() {
+            if (role !== 'teacher') return;
+            const statusSpan = document.getElementById('studentDrawStatus');
+            const isCurrentlyOff = statusSpan.textContent === 'OFF';
+
+            const newState = isCurrentlyOff; // Toggle
+            statusSpan.textContent = newState ? 'ON' : 'OFF';
+
+            // Update Firestore so new joiners know
+             db.collection('activities').where('roomId', '==', roomId).get().then(snap => {
+                if(!snap.empty) {
+                     snap.docs[0].ref.update({
+                         studentCanDraw: newState
+                     });
+                }
+            });
+        }
+
+        function exitBoard() {
+            window.history.back();
+        }
+
+        // Event Listeners
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', moveDraw);
+        canvas.addEventListener('mouseup', endDraw);
+        canvas.addEventListener('mouseout', endDraw);
+
+        canvas.addEventListener('touchstart', startDraw);
+        canvas.addEventListener('touchmove', moveDraw);
+        canvas.addEventListener('touchend', endDraw);
+
+    </script>
+</body>
+</html>
