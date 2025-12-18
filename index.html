@@ -7,48 +7,110 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
-<body class="bg-gray-50 text-gray-800">
+<body class="bg-gray-50 text-gray-800 font-sans">
     
     <!-- Hero -->
-    <header class="bg-gradient-to-r from-blue-600 to-indigo-800 text-white pb-20 pt-10">
-        <div class="container mx-auto px-4 text-center">
-            <h1 class="text-5xl font-bold mb-4">GAKU-Board</h1>
-            <h2 class="text-2xl font-light mb-8">アナログな学校運営を「共感」と「データ」でDXする。</h2>
-            <p class="mb-8 text-blue-100">生徒の声が学校を変える、統合デジタルプラットフォーム。</p>
-            <div class="flex justify-center gap-4">
-                <a href="login.html" class="bg-yellow-400 text-yellow-900 font-bold py-3 px-8 rounded-full hover:bg-yellow-300 transition shadow-lg transform hover:scale-105">
-                    👉 ログインして始める
+    <header class="bg-gradient-to-r from-blue-700 to-indigo-900 text-white pb-24 pt-12 relative overflow-hidden">
+        <div class="container mx-auto px-4 text-center relative z-10">
+            <h1 class="text-5xl md:text-7xl font-extrabold mb-6 tracking-tight">GAKU-Board</h1>
+            <h2 class="text-2xl md:text-3xl font-light mb-8 opacity-90">アナログな学校運営を<br class="md:hidden">「共感」と「データ」でDXする。</h2>
+            <p class="mb-10 text-blue-100 text-lg max-w-2xl mx-auto">生徒の毎日の記録、リアルタイムな授業支援、そして組織的な管理。<br>すべてを一つのプラットフォームで。</p>
+
+            <div class="flex flex-col md:flex-row justify-center gap-6">
+                <!-- Login Button -->
+                <a href="login.html" class="group bg-white text-blue-800 font-bold py-4 px-8 rounded-full hover:bg-gray-100 transition shadow-lg flex items-center justify-center gap-2 transform hover:scale-105">
+                    <span>🔐</span> ログイン
+                    <span class="text-xs font-normal text-gray-500 block">(生徒・先生・管理者)</span>
+                </a>
+
+                <!-- Demo Button -->
+                <a href="demo/index.html" class="group bg-yellow-400 text-yellow-900 font-bold py-4 px-8 rounded-full hover:bg-yellow-300 transition shadow-lg flex items-center justify-center gap-2 transform hover:scale-105">
+                    <span>🚀</span> デモを体験する
+                    <span class="text-xs font-normal text-yellow-800 block">(登録不要・即体験)</span>
                 </a>
             </div>
+        </div>
+
+        <!-- Decorative shapes -->
+        <div class="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+            <div class="absolute top-10 left-10 w-32 h-32 bg-white rounded-full mix-blend-overlay animate-pulse"></div>
+            <div class="absolute bottom-10 right-10 w-64 h-64 bg-blue-400 rounded-full mix-blend-overlay filter blur-3xl"></div>
         </div>
     </header>
 
     <!-- Concept -->
-    <section class="py-16 bg-white -mt-10 rounded-t-3xl shadow-lg mx-4 md:mx-auto max-w-5xl relative z-10">
-        <div class="container mx-auto px-4">
-            <h3 class="text-3xl font-bold text-center mb-12 text-gray-800">GAKU-Boardが提供する価値</h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div class="p-6 border rounded-xl hover:shadow-lg transition text-center">
-                    <div class="text-4xl text-blue-500 mb-4"><i class="fas fa-school"></i></div>
-                    <h4 class="text-xl font-bold mb-2">組織管理の階層化</h4>
-                    <p class="text-gray-600">教育委員会(テナント)・学校・クラスの3階層で、大規模な導入にも柔軟に対応します。</p>
+    <section class="py-20 bg-white -mt-16 rounded-t-[3rem] shadow-xl mx-2 md:mx-auto max-w-6xl relative z-20">
+        <div class="container mx-auto px-6">
+            <div class="text-center mb-16">
+                <span class="text-blue-600 font-bold tracking-widest uppercase text-sm">Features</span>
+                <h3 class="text-3xl md:text-4xl font-bold mt-2 text-gray-900">GAKU-Boardが提供する3つの価値</h3>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
+                <!-- Feature 1 -->
+                <div class="flex flex-col items-center text-center p-6 rounded-2xl hover:bg-gray-50 transition duration-300">
+                    <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-sm">
+                        <i class="fas fa-sitemap"></i>
+                    </div>
+                    <h4 class="text-xl font-bold mb-3">組織管理の最適化</h4>
+                    <p class="text-gray-600 leading-relaxed">
+                        教育委員会(テナント)・学校・クラスの完全な階層構造をサポート。
+                        <br>管理者向けダッシュボードで、大規模な組織もスムーズに運用できます。
+                    </p>
                 </div>
-                <div class="p-6 border rounded-xl hover:shadow-lg transition text-center">
-                    <div class="text-4xl text-green-500 mb-4"><i class="fas fa-heartbeat"></i></div>
-                    <h4 class="text-xl font-bold mb-2">毎日の健康観察</h4>
-                    <p class="text-gray-600">毎朝の気分と体温をワンタップで記録。先生はクラス全員の状況を一目で把握できます。</p>
+
+                <!-- Feature 2 -->
+                <div class="flex flex-col items-center text-center p-6 rounded-2xl hover:bg-gray-50 transition duration-300">
+                    <div class="w-16 h-16 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-sm">
+                        <i class="fas fa-clipboard-check"></i>
+                    </div>
+                    <h4 class="text-xl font-bold mb-3">毎日の健康観察</h4>
+                    <p class="text-gray-600 leading-relaxed">
+                        生徒はワンタップで気分と体温を記録。
+                        <br>先生は一覧画面でクラス全員のコンディションを瞬時に把握し、早期対応につなげます。
+                    </p>
                 </div>
-                <div class="p-6 border rounded-xl hover:shadow-lg transition text-center">
-                    <div class="text-4xl text-purple-500 mb-4"><i class="fas fa-desktop"></i></div>
-                    <h4 class="text-xl font-bold mb-2">リアルタイム授業</h4>
-                    <p class="text-gray-600">WebRTC技術を活用した「お絵かきボード」と「画面共有」。先生の画面を生徒の端末に強制表示し、集中力を維持します。</p>
+
+                <!-- Feature 3 -->
+                <div class="flex flex-col items-center text-center p-6 rounded-2xl hover:bg-gray-50 transition duration-300">
+                    <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-sm">
+                        <i class="fas fa-video"></i>
+                    </div>
+                    <h4 class="text-xl font-bold mb-3">リアルタイム授業支援</h4>
+                    <p class="text-gray-600 leading-relaxed">
+                        WebRTC技術による「お絵かきボード」と「強制画面共有」。
+                        <br>先生の画面を生徒の手元に映し出し、授業への没入感を高めます。
+                    </p>
                 </div>
             </div>
         </div>
     </section>
 
-    <footer class="bg-gray-800 text-white py-8 text-center mt-12">
-        <p>&copy; 2025 GAKU-Board 開発チーム</p>
+    <!-- Tech Stack -->
+    <section class="py-16 bg-gray-50">
+        <div class="container mx-auto px-6 text-center">
+            <h3 class="text-2xl font-bold text-gray-400 mb-8">Powered By</h3>
+            <div class="flex flex-wrap justify-center gap-8 md:gap-16 opacity-60 grayscale hover:grayscale-0 transition duration-500">
+                <div class="flex items-center gap-2"><i class="fab fa-google text-2xl"></i> <span class="font-bold text-xl">Firebase</span></div>
+                <div class="flex items-center gap-2"><i class="fas fa-network-wired text-2xl"></i> <span class="font-bold text-xl">PeerJS</span></div>
+                <div class="flex items-center gap-2"><i class="fab fa-html5 text-2xl"></i> <span class="font-bold text-xl">HTML5</span></div>
+                <div class="flex items-center gap-2"><i class="fas fa-shield-alt text-2xl"></i> <span class="font-bold text-xl">Security Rules</span></div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="bg-gray-900 text-white py-12 border-t border-gray-800">
+        <div class="container mx-auto px-6 text-center">
+            <div class="mb-6">
+                <h4 class="text-2xl font-bold mb-2">GAKU-Board</h4>
+                <p class="text-gray-400 text-sm">Future School Management Platform</p>
+            </div>
+            <div class="flex justify-center gap-6 text-sm text-gray-400 mb-8">
+                <a href="login.html" class="hover:text-white transition">ログイン</a>
+                <a href="demo/index.html" class="hover:text-white transition">デモ体験</a>
+            </div>
+            <p class="text-gray-600 text-xs">&copy; 2025 GAKU-Board Development Team. All rights reserved.</p>
+        </div>
     </footer>
 
 </body>
