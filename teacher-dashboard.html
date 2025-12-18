@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>先生ダッシュボード</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+    <script src="js/auth.js"></script>
+</head>
+<body class="bg-gray-50 h-screen flex overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-64 bg-indigo-900 text-white flex-shrink-0 hidden md:flex flex-col">
+        <div class="p-4 text-center font-bold text-xl border-b border-indigo-800">GAKU-Board</div>
+        <nav class="flex-grow p-4 space-y-2">
+            <button onclick="showSection('home')" class="w-full text-left p-2 rounded hover:bg-indigo-800">ホーム</button>
+            <button onclick="showSection('daily')" class="w-full text-left p-2 rounded hover:bg-indigo-800">毎日の記録</button>
+            <button onclick="showSection('portal')" class="w-full text-left p-2 rounded hover:bg-indigo-800">学習ポータル管理</button>
+            <button onclick="showSection('announce')" class="w-full text-left p-2 rounded hover:bg-indigo-800">お知らせ配信</button>
+        </nav>
+        <div class="p-4 border-t border-indigo-800">
+            <button onclick="handleLogout()" class="w-full bg-red-600 p-2 rounded hover:bg-red-700">ログアウト</button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-grow flex flex-col overflow-y-auto">
+        <header class="bg-white shadow p-4 flex justify-between items-center md:hidden">
+            <div class="font-bold">GAKU-Board 先生</div>
+            <button onclick="handleLogout()" class="text-red-600 text-sm">ログアウト</button>
+        </header>
+
+        <div class="p-8">
+            <div id="loading" class="text-center text-gray-500">読み込み中...</div>
+
+            <!-- HOME Section -->
+            <section id="section-home" class="hidden space-y-6">
+                <h2 class="text-2xl font-bold text-gray-800">ホーム</h2>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white p-6 rounded shadow border-l-4 border-blue-500">
+                        <h3 class="font-bold text-lg mb-2">リアルタイム授業ツール</h3>
+                        <div class="space-y-3">
+                            <button onclick="launchActivity('whiteboard')" class="w-full bg-blue-100 text-blue-700 py-3 rounded hover:bg-blue-200 font-bold flex items-center justify-center gap-2">
+                                <span>🎨</span> ホワイトボードを開始
+                            </button>
+                            <button onclick="launchActivity('screenshare')" class="w-full bg-green-100 text-green-700 py-3 rounded hover:bg-green-200 font-bold flex items-center justify-center gap-2">
+                                <span>📺</span> 画面共有を開始
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded shadow border-l-4 border-yellow-500">
+                        <h3 class="font-bold text-lg mb-2">今日のクラス状況</h3>
+                        <div id="home-stats">
+                            <!-- Populated by JS -->
+                            <p class="text-gray-500">データ取得中...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- DAILY RECORDS Section -->
+            <section id="section-daily" class="hidden space-y-6">
+                <h2 class="text-2xl font-bold text-gray-800">毎日の記録 (健康観察)</h2>
+                <div class="bg-white rounded shadow overflow-hidden">
+                    <div class="p-4 border-b flex justify-between items-center bg-gray-50">
+                        <span class="font-bold text-gray-600">本日の提出状況</span>
+                        <input type="date" id="daily-date-picker" class="border rounded p-1" onchange="loadDailyRecords()">
+                    </div>
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="p-3 text-left">名前</th>
+                                <th class="p-3 text-left">気分</th>
+                                <th class="p-3 text-left">体温</th>
+                                <th class="p-3 text-left">コメント</th>
+                                <th class="p-3 text-left">時間</th>
+                            </tr>
+                        </thead>
+                        <tbody id="daily-list" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- PORTAL MANAGEMENT Section -->
+            <section id="section-portal" class="hidden space-y-6">
+                <h2 class="text-2xl font-bold text-gray-800">学習ポータル管理</h2>
+
+                <div class="bg-white p-6 rounded shadow">
+                    <h3 class="font-bold mb-4">新規リンク追加</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <input type="text" id="link-title" placeholder="タイトル (例: ドリルアプリ)" class="border p-2 rounded">
+                        <input type="url" id="link-url" placeholder="URL (https://...)" class="border p-2 rounded">
+                        <input type="url" id="link-icon" placeholder="アイコン画像URL (任意)" class="border p-2 rounded">
+                    </div>
+                    <button onclick="addPortalLink()" class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700">追加</button>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="portal-list-edit">
+                    <!-- Icons preview -->
+                </div>
+            </section>
+
+            <!-- ANNOUNCEMENTS Section -->
+            <section id="section-announce" class="hidden space-y-6">
+                <h2 class="text-2xl font-bold text-gray-800">お知らせ配信</h2>
+                <div class="bg-white p-6 rounded shadow">
+                    <input type="text" id="announce-title" placeholder="件名" class="w-full border p-2 rounded mb-2 font-bold">
+                    <textarea id="announce-body" placeholder="本文" class="w-full border p-2 rounded mb-2 h-32"></textarea>
+                    <button onclick="postAnnouncement()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">送信</button>
+                </div>
+
+                <div class="space-y-4" id="announce-history">
+                    <!-- History -->
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script src="js/teacher-dashboard.js"></script>
+</body>
+</html>

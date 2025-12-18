@@ -1,62 +1,129 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
+
+    // --- Helper Functions ---
+
     function isAuthenticated() {
       return request.auth != null;
     }
 
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+
+    // Check if user belongs to the specific tenant
+    function isTenantMember(tenantId) {
+      return isAuthenticated() && getUserData().tenantId == tenantId;
+    }
+
+    // Check if user belongs to the specific school
+    function isSchoolMember(schoolId) {
+      return isAuthenticated() && getUserData().schoolId == schoolId;
+    }
+
+    // Check if user belongs to the specific class
+    function isClassMember(classId) {
+      return isAuthenticated() && getUserData().classId == classId;
+    }
+
+    // --- Role-based Permissions ---
+
     function isSuperAdmin() {
-      return isAuthenticated() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)) && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'super_admin';
+      return hasRole('super_admin');
     }
 
     function isTenantAdmin(tenantId) {
-       // Check if user is a teacher/admin for this tenant
-       // Assumes user profile has tenantId and role
-       return isAuthenticated() &&
-         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId == tenantId &&
-         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher');
+      return hasRole('tenant_admin') && isTenantMember(tenantId);
     }
 
-    // Super Admin collection
-    match /admins/{userId} {
-      allow read: if isAuthenticated(); // minimal read to check role
+    function isSchoolAdmin(schoolId) {
+      return hasRole('school_admin') && isSchoolMember(schoolId);
+    }
+
+    // --- Collections ---
+
+    match /tenants/{tenantId} {
+      allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
     }
 
-    // Tenants (Schools)
-    match /tenants/{tenantId} {
-      allow read: if true; // Login needs to read config (auth methods)
-      allow write: if isSuperAdmin(); // Only super admin can create/edit tenants
+    match /schools/{schoolId} {
+      allow read: if isAuthenticated();
+      allow write: if isTenantAdmin(resource.data.tenantId) || isSuperAdmin();
+      allow create: if isTenantAdmin(request.resource.data.tenantId) || isSuperAdmin();
     }
 
-    // Users (Students/Teachers)
-    match /users/{userId} {
-      // Allow read if:
-      // 1. Own profile (by UID)
-      // 2. Tenant Admin
-      // 3. User looking up their own email (Whitelist check flow)
-      allow read: if isAuthenticated() && (
-        request.auth.uid == userId ||
-        (resource.data.tenantId != null && isTenantAdmin(resource.data.tenantId)) ||
-        resource.data.email == request.auth.token.email
-      );
-
-      allow write: if isAuthenticated() && (request.auth.uid == userId || (resource.data.tenantId != null && isTenantAdmin(resource.data.tenantId)));
-      allow create: if true; // Allow signup
-    }
-
-    // Classes
     match /classes/{classId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isTenantAdmin(resource.data.tenantId);
+      allow write: if isSchoolAdmin(resource.data.schoolId) || (resource.data == null && isSchoolAdmin(request.resource.data.schoolId));
     }
 
-    // Activities (Votes, Suggestions, Whiteboard sessions)
+    // Users
+    match /users/{userId} {
+      // Allow read if self or admin in hierarchy
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        resource.data.tenantId == getUserData().tenantId
+      );
+
+      // Allow create if self (Claiming account from whitelist)
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+
+      // Allow update/write if self or admin
+      allow write: if isAuthenticated() && (request.auth.uid == userId || hasRole('super_admin') || hasRole('tenant_admin') || hasRole('school_admin'));
+    }
+
+    // Whitelist (Invitations)
+    // Read: If the invitation email matches the user's auth email (so they can find their invite)
+    // Write: Admins
+    match /whitelist/{inviteId} {
+      allow read: if isAuthenticated() && (
+        resource.data.email == request.auth.token.email ||
+        hasRole('super_admin') ||
+        hasRole('tenant_admin') ||
+        hasRole('school_admin')
+      );
+      allow write: if isAuthenticated() && (
+        hasRole('super_admin') ||
+        hasRole('tenant_admin') ||
+        hasRole('school_admin')
+      );
+    }
+
+    // Daily Records
+    match /daily_records/{recordId} {
+      allow read: if isAuthenticated() && (
+        resource.data.studentId == request.auth.uid ||
+        (hasRole('teacher') && getUserData().classId == resource.data.classId) ||
+        (hasRole('school_admin') && getUserData().schoolId == resource.data.schoolId)
+      );
+      allow create: if isAuthenticated() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.studentId == request.auth.uid ||
+        (hasRole('teacher') && getUserData().classId == resource.data.classId)
+      );
+    }
+
+    // Portal Links
+    match /portal_links/{linkId} {
+      allow read: if isAuthenticated();
+      allow write: if hasRole('teacher') || hasRole('school_admin');
+    }
+
+    // Announcements
+    match /announcements/{announceId} {
+      allow read: if isAuthenticated();
+      allow write: if hasRole('teacher') || hasRole('school_admin');
+    }
+
+    // Activities
     match /activities/{activityId} {
-       allow read: if isAuthenticated();
-       allow write: if isAuthenticated();
+      allow read, write: if isAuthenticated();
     }
   }
 }

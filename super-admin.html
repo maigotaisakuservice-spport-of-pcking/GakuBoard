@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>スーパー管理者画面</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+    <script src="js/auth.js"></script> <!-- For logout -->
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-blue-800 text-white p-4 flex justify-between items-center">
+        <h1 class="text-xl font-bold">GAKU-Board スーパー管理</h1>
+        <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded">ログアウト</button>
+    </nav>
+
+    <div class="container mx-auto p-8">
+        <!-- Create Tenant Section -->
+        <div class="bg-white p-6 rounded shadow mb-8">
+            <h2 class="text-2xl font-bold mb-4">新規テナント作成 (教育委員会など)</h2>
+            <div class="flex gap-4">
+                <input type="text" id="new-tenant-name" placeholder="テナント名 (例: 東京都教育委員会)" class="border p-2 rounded flex-grow">
+                <button onclick="createTenant()" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700">作成</button>
+            </div>
+        </div>
+
+        <!-- Create Tenant Admin Section -->
+        <div class="bg-white p-6 rounded shadow mb-8">
+            <h2 class="text-2xl font-bold mb-4">テナント管理者招待</h2>
+            <p class="text-sm text-gray-500 mb-4">メールアドレスを指定して、テナント管理者を招待します。</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <select id="tenant-select" class="border p-2 rounded">
+                    <option value="">テナントを選択</option>
+                </select>
+                <input type="email" id="target-email" placeholder="メールアドレス (例: admin@example.com)" class="border p-2 rounded">
+                <button onclick="inviteTenantAdmin()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">招待する</button>
+            </div>
+        </div>
+
+        <!-- Tenant List -->
+        <div class="bg-white p-6 rounded shadow">
+            <h2 class="text-2xl font-bold mb-4">テナント一覧</h2>
+            <ul id="tenant-list" class="divide-y divide-gray-200">
+                <!-- List items here -->
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Security Check
+        auth.onAuthStateChanged(user => {
+            if (!user) {
+                window.location.href = 'login.html';
+            } else {
+                db.collection('users').doc(user.uid).get().then(doc => {
+                    if(!doc.exists || doc.data().role !== 'super_admin') {
+                        alert('権限がありません');
+                        window.location.href = 'login.html';
+                    }
+                });
+            }
+        });
+
+        // Load tenants on start
+        window.addEventListener('DOMContentLoaded', () => {
+             loadTenants();
+        });
+
+        async function loadTenants() {
+            const list = document.getElementById('tenant-list');
+            const select = document.getElementById('tenant-select');
+            list.innerHTML = '';
+            select.innerHTML = '<option value="">テナントを選択</option>';
+
+            const snap = await db.collection('tenants').get();
+            snap.forEach(doc => {
+                const data = doc.data();
+                const li = document.createElement('li');
+                li.className = 'py-4 flex justify-between items-center';
+                li.innerHTML = `
+                    <div>
+                        <p class="font-bold text-lg">${data.name}</p>
+                        <p class="text-sm text-gray-500">ID: ${doc.id}</p>
+                    </div>
+                `;
+                list.appendChild(li);
+
+                const opt = document.createElement('option');
+                opt.value = doc.id;
+                opt.textContent = data.name;
+                select.appendChild(opt);
+            });
+        }
+
+        async function createTenant() {
+            const name = document.getElementById('new-tenant-name').value;
+            if (!name) return alert('テナント名を入力してください');
+
+            try {
+                await db.collection('tenants').add({
+                    name: name,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                alert('テナントを作成しました');
+                document.getElementById('new-tenant-name').value = '';
+                loadTenants();
+            } catch (e) {
+                console.error(e);
+                alert('作成失敗: ' + e.message);
+            }
+        }
+
+        async function inviteTenantAdmin() {
+            const tenantId = document.getElementById('tenant-select').value;
+            const email = document.getElementById('target-email').value;
+
+            if (!tenantId || !email) return alert('テナントとメールアドレスを入力してください');
+
+            try {
+                await db.collection('whitelist').add({
+                    email: email,
+                    role: 'tenant_admin',
+                    tenantId: tenantId,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                alert('招待を作成しました。ユーザーがログインするとアカウントが有効になります。');
+                document.getElementById('target-email').value = '';
+            } catch (e) {
+                console.error(e);
+                alert('設定失敗: ' + e.message);
+            }
+        }
+    </script>
+</body>
+</html>

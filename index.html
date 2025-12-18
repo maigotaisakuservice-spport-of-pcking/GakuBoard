@@ -3,97 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="GAKU-Boardは、生徒の共感とデータで学校運営をDXするデジタルプラットフォームです。">
-    <meta name="author" content="GAKU-Board 開発チーム">
-    <title>GAKU-Board | 学校運営をDXするデジタルプラットフォーム</title>
-    
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RTOK1B7/LMDJgKzC3K5tW8n4J6rI8l22E1R3wX0eJ2lR9Jj3wFf8A8eW3o5G+E3wK3G5tQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    
-    <link rel="stylesheet" href="styles.css"> 
+    <title>GAKU-Board | 学校運営DXプラットフォーム</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
-<body>
+<body class="bg-gray-50 text-gray-800">
     
-    <header class="hero-section">
-        <div class="container">
-            <h1>GAKU-Board</h1>
-            <h2>アナログな学校運営を「共感」と「データ」でDXする。</h2>
-            <p>生徒の声が学校を変える、統合デジタルプラットフォーム。</p>
-            <div class="cta-buttons">
-                <a href="#demo" class="btn btn-primary">👉 作品デモを体験する</a>
-                <a href="#concept" class="btn btn-secondary">🏫 解決したい課題を見る</a>
+    <!-- Hero -->
+    <header class="bg-gradient-to-r from-blue-600 to-indigo-800 text-white pb-20 pt-10">
+        <div class="container mx-auto px-4 text-center">
+            <h1 class="text-5xl font-bold mb-4">GAKU-Board</h1>
+            <h2 class="text-2xl font-light mb-8">アナログな学校運営を「共感」と「データ」でDXする。</h2>
+            <p class="mb-8 text-blue-100">生徒の声が学校を変える、統合デジタルプラットフォーム。</p>
+            <div class="flex justify-center gap-4">
+                <a href="login.html" class="bg-yellow-400 text-yellow-900 font-bold py-3 px-8 rounded-full hover:bg-yellow-300 transition shadow-lg transform hover:scale-105">
+                    👉 ログインして始める
+                </a>
             </div>
-            <div class="hero-visual">
-                </div>
         </div>
     </header>
 
-    <section id="concept" class="concept-section">
-        <div class="container">
-            <h3>生徒・先生の「困った」をデジタルで解消</h3>
-            <div class="card-grid">
-                <div class="card">
-                    <h4><i class="fas fa-bullhorn"></i> 声が届かない壁</h4>
-                    <p>意見箱を使うのは一部の生徒のみ。全校の真のニーズが埋もれてしまう。</p>
+    <!-- Concept -->
+    <section class="py-16 bg-white -mt-10 rounded-t-3xl shadow-lg mx-4 md:mx-auto max-w-5xl relative z-10">
+        <div class="container mx-auto px-4">
+            <h3 class="text-3xl font-bold text-center mb-12 text-gray-800">GAKU-Boardが提供する価値</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div class="p-6 border rounded-xl hover:shadow-lg transition text-center">
+                    <div class="text-4xl text-blue-500 mb-4"><i class="fas fa-school"></i></div>
+                    <h4 class="text-xl font-bold mb-2">組織管理の階層化</h4>
+                    <p class="text-gray-600">教育委員会(テナント)・学校・クラスの3階層で、大規模な導入にも柔軟に対応します。</p>
                 </div>
-                <div class="card">
-                    <h4><i class="fas fa-clock"></i> 時間のかかる壁</h4>
-                    <p>紙のアンケートの作成、集計に多大な時間を費やしている。</p>
+                <div class="p-6 border rounded-xl hover:shadow-lg transition text-center">
+                    <div class="text-4xl text-green-500 mb-4"><i class="fas fa-heartbeat"></i></div>
+                    <h4 class="text-xl font-bold mb-2">毎日の健康観察</h4>
+                    <p class="text-gray-600">毎朝の気分と体温をワンタップで記録。先生はクラス全員の状況を一目で把握できます。</p>
                 </div>
-                <div class="card">
-                    <h4><i class="fas fa-eye-slash"></i> 行動が見えない壁</h4>
-                    <p>意見を出しても「結局どうなった？」が分からず、生徒の関心が薄れる。</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section id="features" class="features-section">
-        <div class="container">
-            <h3>GAKU-Boardの２つの主要機能</h3>
-            
-            <div class="feature-item">
-                <h4>💡 柱1：共創型生徒会ボード（意見収集DX）</h4>
-                <p>AIによる自動タグ付けと、生徒の共感数に基づく課題の優先度自動決定で、生徒会業務を大幅に効率化します。</p>
-                <ul>
-                    <li><i class="fas fa-heart"></i> **リアルタイム共感**：賛同数に基づき、緊急度の高い課題を自動表示。</li>
-                    <li><i class="fas fa-tags"></i> **AI自動分類**：投稿内容をAIが解析し、タグ付け。</li>
-                    <li><i class="fas fa-timeline"></i> **透明化タイムライン**：対応プロセスを全公開。</li>
-                </ul>
-            </div>
-
-            <div class="feature-item reverse">
-                <h4>📚 柱2：スマート授業ボード（授業支援DX）</h4>
-                <p>授業中のクイズや賛否投票の結果を瞬時にグラフ化し、先生の指導をデータに基づいて最適化します。</p>
-                <ul>
-                    <li><i class="fas fa-square-poll-vertical"></i> **クイック投票**：スマホで即座に回答。</li>
-                    <li><i class="fas fa-chart-pie"></i> **即時グラフ化**：回答と同時にグラフが動く（情報Iのデータ可視化）。</li>
-                    <li><i class="fas fa-copy"></i> **テンプレート共有**：アンケート作成の負担を軽減。</li>
-                </ul>
-            </div>
-        </div>
-    </section>
-
-    <section id="technology" class="technology-section">
-        <div class="container">
-            <h3>未来の学校のための確かな技術と倫理</h3>
-            <div class="tech-grid">
-                <div class="tech-item">
-                    <h4><i class="fas fa-cogs"></i> 情報Iの知識活用</h4>
-                    <p>データの可視化、データベース設計、ネットワーク技術を応用しています。</p>
-                </div>
-                <div class="tech-item">
-                    <h4><i class="fas fa-lock"></i> 倫理的配慮とセキュリティ</h4>
-                    <p>意見投稿の匿名性確保、個人情報データの暗号化に配慮しています。</p>
+                <div class="p-6 border rounded-xl hover:shadow-lg transition text-center">
+                    <div class="text-4xl text-purple-500 mb-4"><i class="fas fa-desktop"></i></div>
+                    <h4 class="text-xl font-bold mb-2">リアルタイム授業</h4>
+                    <p class="text-gray-600">WebRTC技術を活用した「お絵かきボード」と「画面共有」。先生の画面を生徒の端末に強制表示し、集中力を維持します。</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <footer>
-        <div class="container">
-            <p>&copy; 2025 GAKU-Board 開発チーム</p>
-            <a href="#">募集要項</a> | <a href="#">開発メンバー</a>
-        </div>
+    <footer class="bg-gray-800 text-white py-8 text-center mt-12">
+        <p>&copy; 2025 GAKU-Board 開発チーム</p>
     </footer>
 
 </body>

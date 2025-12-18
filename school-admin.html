@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>学校管理画面</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+    <script src="js/auth.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-green-700 text-white p-4 flex justify-between items-center">
+        <h1 class="text-xl font-bold">学校管理 (クラス・ユーザー)</h1>
+        <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded">ログアウト</button>
+    </nav>
+
+    <div class="container mx-auto p-8">
+        <div id="school-info" class="mb-8 p-4 bg-white rounded shadow">
+            <h2 class="text-xl font-bold text-gray-800">読み込み中...</h2>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Classes Section -->
+            <div class="bg-white p-6 rounded shadow">
+                <h3 class="text-lg font-bold mb-4">クラス管理</h3>
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="new-class-name" placeholder="クラス名 (例: 1年A組)" class="border p-2 rounded flex-grow">
+                    <button onclick="createClass()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">作成</button>
+                </div>
+                <ul id="class-list" class="divide-y divide-gray-200 h-64 overflow-y-auto">
+                    <!-- Classes -->
+                </ul>
+            </div>
+
+            <!-- User Invitation Section -->
+            <div class="bg-white p-6 rounded shadow">
+                <h3 class="text-lg font-bold mb-4">ユーザー招待 (先生・生徒)</h3>
+                <div class="flex flex-col gap-4">
+                    <div class="flex gap-2">
+                        <input type="email" id="target-email" placeholder="メールアドレス" class="border p-2 rounded flex-grow">
+                        <select id="target-role" class="border p-2 rounded">
+                            <option value="student">生徒</option>
+                            <option value="teacher">先生</option>
+                        </select>
+                    </div>
+                    <div class="flex gap-2">
+                        <select id="assign-class-select" class="border p-2 rounded flex-grow">
+                            <option value="">クラスを選択 (所属なし)</option>
+                        </select>
+                        <button onclick="inviteUser()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">招待送信</button>
+                    </div>
+                    <p class="text-xs text-gray-500">※ メールアドレスをホワイトリストに登録します。ユーザーがログインすると所属が確定します。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Users List -->
+        <div class="bg-white p-6 rounded shadow mt-8">
+            <h3 class="text-lg font-bold mb-4">所属ユーザー一覧</h3>
+            <button onclick="loadUsers()" class="text-blue-500 underline text-sm mb-2">更新</button>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="p-2">名前/Email</th>
+                            <th class="p-2">ロール</th>
+                            <th class="p-2">クラスID</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-list"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSchoolId = null;
+        let currentTenantId = null;
+
+        auth.onAuthStateChanged(async user => {
+            if (user) {
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                if (userDoc.exists) {
+                    const data = userDoc.data();
+                    if (data.role !== 'school_admin' && data.role !== 'tenant_admin' && data.role !== 'super_admin') {
+                         alert('権限がありません');
+                         window.location.href = 'login.html';
+                         return;
+                    }
+                    currentSchoolId = data.schoolId;
+                    currentTenantId = data.tenantId;
+                    loadSchoolInfo();
+                    loadClasses();
+                    loadUsers();
+                }
+            } else {
+                window.location.href = 'login.html';
+            }
+        });
+
+        async function loadSchoolInfo() {
+            const doc = await db.collection('schools').doc(currentSchoolId).get();
+            if (doc.exists) {
+                document.querySelector('#school-info h2').textContent = `学校: ${doc.data().name}`;
+            }
+        }
+
+        async function loadClasses() {
+            const list = document.getElementById('class-list');
+            const select = document.getElementById('assign-class-select');
+            list.innerHTML = '';
+            select.innerHTML = '<option value="">クラスを選択 (所属なし)</option>';
+
+            const snap = await db.collection('classes').where('schoolId', '==', currentSchoolId).get();
+            snap.forEach(doc => {
+                const data = doc.data();
+                const li = document.createElement('li');
+                li.className = 'py-2 flex justify-between items-center';
+                li.innerHTML = `<span>${data.name}</span> <span class="text-gray-400 text-xs">${doc.id}</span>`;
+                list.appendChild(li);
+
+                const opt = document.createElement('option');
+                opt.value = doc.id;
+                opt.textContent = data.name;
+                select.appendChild(opt);
+            });
+        }
+
+        async function createClass() {
+            const name = document.getElementById('new-class-name').value;
+            if (!name) return;
+
+            try {
+                await db.collection('classes').add({
+                    name: name,
+                    schoolId: currentSchoolId,
+                    tenantId: currentTenantId,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                document.getElementById('new-class-name').value = '';
+                loadClasses();
+            } catch (e) {
+                console.error(e);
+                alert('作成失敗');
+            }
+        }
+
+        async function inviteUser() {
+            const email = document.getElementById('target-email').value;
+            const role = document.getElementById('target-role').value;
+            const classId = document.getElementById('assign-class-select').value;
+
+            if (!email) return alert('メールアドレスを入力してください');
+
+            try {
+                const inviteData = {
+                    email: email,
+                    role: role,
+                    schoolId: currentSchoolId,
+                    tenantId: currentTenantId,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                if (classId) {
+                    inviteData.classId = classId;
+                }
+
+                await db.collection('whitelist').add(inviteData);
+                alert('招待しました。ユーザーがログインすると所属が確定します。');
+                document.getElementById('target-email').value = '';
+            } catch (e) {
+                console.error(e);
+                alert('招待失敗: ' + e.message);
+            }
+        }
+
+        async function loadUsers() {
+            const tbody = document.getElementById('users-list');
+            tbody.innerHTML = '';
+
+            try {
+                const snap = await db.collection('users').where('schoolId', '==', currentSchoolId).limit(20).get();
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="p-2 border font-mono text-xs">${data.name || data.email}</td>
+                        <td class="p-2 border">${data.role}</td>
+                        <td class="p-2 border">${data.classId || '-'}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error("User list load error:", e);
+                tbody.innerHTML = '<tr><td colspan="3">読み込みエラー (インデックス未作成の可能性があります)</td></tr>';
+            }
+        }
+    </script>
+</body>
+</html>

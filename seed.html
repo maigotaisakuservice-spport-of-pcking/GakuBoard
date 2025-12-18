@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>初期セットアップ</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+</head>
+<body>
+    <h1>スーパー管理者作成 (開発用)</h1>
+    <p>このページは、DBが空の場合やテスト用に、現在ログイン中のユーザーを「スーパー管理者」に昇格させます。</p>
+
+    <button onclick="makeSuperAdmin()">現在ログイン中のユーザーをスーパー管理者にする</button>
+
+    <script>
+        async function makeSuperAdmin() {
+            const user = auth.currentUser;
+            if (!user) {
+                alert("まずはログインしてください（login.htmlでログインしてから戻ってきてください）");
+                return;
+            }
+
+            try {
+                // Create/Overwrite user doc
+                await db.collection('users').doc(user.uid).set({
+                    email: user.email,
+                    role: 'super_admin',
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                alert("成功: スーパー管理者になりました。login.htmlに戻ってログインし直してください。");
+                // Create admins entry too if needed by rules?
+                // Rules: isSuperAdmin() -> hasRole('super_admin').
+                // Wait, previous rules had /admins/ collection check.
+                // New rules: hasRole('super_admin') which checks /users/{uid}.role
+                // So this is sufficient.
+            } catch (error) {
+                console.error(error);
+                alert("失敗: " + error.message);
+            }
+        }
+
+        // Check auth state
+        auth.onAuthStateChanged(u => {
+            if(u) console.log("Logged in as: ", u.email);
+            else console.log("Not logged in");
+        });
+    </script>
+</body>
+</html>

@@ -2,294 +2,253 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <title>画面共有 - GAKU-Board</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GAKU-Board 画面共有</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="styles.css">
-
-    <!-- Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="js/firebase-config.js"></script>
     <script src="js/firebase-init.js"></script>
-
-    <!-- PeerJS -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-
     <style>
-        body, html { margin: 0; height: 100%; background: #2f2f2f; color: white; display:flex; flex-direction:column;}
-
-        .toolbar {
-            height: 60px; background: #202020; display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
+        #fullscreen-viewer {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: black; z-index: 9000; display: none;
+            flex-direction: column; align-items: center; justify-content: center;
         }
-
-        #video-container {
-            flex: 1; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative;
-        }
-
-        video {
-            max-width: 100%; max-height: 100%;
-            background: black;
-        }
-
-        .status-badge {
-            background: #e74c3c; color: white; padding: 5px 10px; border-radius: 4px; font-size: 0.8em; font-weight: bold;
-        }
-        .status-badge.active { background: #2ecc71; }
-
-        .control-panel {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 30px;
-            display: flex; gap: 15px;
-        }
-
-        .btn-circle {
-            width: 50px; height: 50px; border-radius: 50%; border: none; font-size: 1.2em;
-            cursor: pointer; display: flex; justify-content: center; align-items: center;
-            transition: transform 0.2s;
-        }
-        .btn-circle:hover { transform: scale(1.1); }
-        .btn-danger { background: #e74c3c; color: white; }
-        .btn-primary { background: #3498db; color: white; }
-        .btn-success { background: #2ecc71; color: white; }
-
-        #msgOverlay {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            text-align: center; color: #aaa;
-        }
+        video { max-width: 100%; max-height: 100%; }
     </style>
 </head>
-<body>
+<body class="bg-gray-900 text-white h-screen flex flex-col">
 
-    <div class="toolbar">
-        <div style="display:flex; align-items:center; gap:10px;">
-            <button onclick="exitSession()" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> 退出</button>
-            <h3 style="margin:0;">画面共有セッション</h3>
-        </div>
+    <header class="p-4 bg-gray-800 flex justify-between items-center">
         <div>
-            <span id="roleDisplay">Checking role...</span>
-            <span id="statusBadge" class="status-badge">Connecting</span>
+            <h1 class="text-xl font-bold">GAKU-Board 画面共有</h1>
+            <p id="status" class="text-xs text-gray-400">接続待機中...</p>
         </div>
-    </div>
-
-    <div id="video-container">
-        <div id="msgOverlay">
-            <i class="fas fa-desktop fa-3x"></i>
-            <p id="overlayText">接続待機中...</p>
+        <div id="controls" class="flex gap-2">
+            <!-- Buttons injected by JS -->
         </div>
-        <video id="remoteVideo" autoplay playsinline></video>
-    </div>
+    </header>
 
-    <!-- Controls for Presenter -->
-    <div id="presenterControls" class="control-panel" style="display:none;">
-        <button class="btn-circle btn-success" onclick="startScreenShare()" title="画面共有開始">
-            <i class="fas fa-play"></i>
-        </button>
-        <button class="btn-circle btn-danger" onclick="stopScreenShare()" title="停止">
-            <i class="fas fa-stop"></i>
-        </button>
-    </div>
+    <main class="flex-grow relative flex items-center justify-center">
+        <div id="placeholder" class="text-gray-500 text-center">
+            <p class="text-2xl mb-2">待機中</p>
+            <p>共有が開始されるとここに表示されます</p>
+        </div>
+    </main>
 
-    <!-- Controls for Teacher (Permission) -->
-    <div id="teacherControls" class="control-panel" style="display:none; bottom: 90px;">
-        <button class="btn btn-secondary" onclick="toggleStudentPermission()" id="permBtn">
-            生徒の共有を許可: OFF
-        </button>
-    </div>
-
-    <!-- Controls for Student (Request) -->
-    <div id="studentControls" class="control-panel" style="display:none;">
-         <button class="btn-circle btn-primary" id="studentShareBtn" onclick="requestShare()" disabled title="共有権限がありません">
-            <i class="fas fa-share-square"></i>
-        </button>
+    <!-- Fullscreen Modal -->
+    <div id="fullscreen-viewer">
+        <div class="absolute top-4 right-4 z-50">
+            <button onclick="closeViewer()" class="bg-red-600 px-4 py-2 rounded text-white font-bold opacity-50 hover:opacity-100 transition">閉じる</button>
+        </div>
+        <video id="remote-video" autoplay playsinline></video>
+        <p class="text-white mt-2">画面共有中...</p>
     </div>
 
     <script>
-        const params = new URLSearchParams(window.location.search);
-        const roomId = params.get('room');
-        const userRole = params.get('role');
+        const urlParams = new URLSearchParams(window.location.search);
+        const classId = urlParams.get('classId');
+        const mode = urlParams.get('mode'); // 'teacher' or 'student'
+        const activityId = `screenshare_${classId}`;
 
-        let peer;
-        let myStream;
-        let currentPresenterId = null;
-        let myPeerId = null;
-        let currentUserData = null;
+        let peer = null;
+        let myStream = null;
+        let currentCall = null;
+        let isSharing = false;
 
-        // Firestore Listener
-        let unsubscribe;
+        // Initialize
+        if (!classId || !mode) {
+            alert("URLパラメータが不足しています");
+            window.location.href = 'login.html';
+        }
 
-        auth.onAuthStateChanged(async user => {
-            if(!user) { window.location.href = 'index.html'; return; }
-            // Get Name
-            const uDoc = await db.collection('users').doc(user.uid).get();
-            currentUserData = uDoc.data();
-
-            initApp();
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                initPeer(user.uid);
+                setupFirestoreListener();
+                setupUI();
+            } else {
+                window.location.href = 'login.html';
+            }
         });
 
-        async function initApp() {
-            document.getElementById('roleDisplay').textContent = userRole === 'teacher' ? '先生' : '生徒';
+        function initPeer(uid) {
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                secure: true,
+                // Teacher has fixed ID for easier fallback, but we use Firestore for signaling current presenter
+                // Actually, let's just use random IDs and sync via Firestore
+            });
 
-            peer = new Peer();
             peer.on('open', id => {
-                myPeerId = id;
                 console.log('My Peer ID:', id);
-                joinRoom(id);
+                document.getElementById('status').textContent = `接続完了 (ID: ${id})`;
+
+                // If I am teacher, I might want to update my ID somewhere?
+                // Or just wait for actions.
             });
 
-            // Handle Incoming Data Connections (Viewer requests stream)
-            peer.on('connection', conn => {
-                conn.on('data', data => {
-                    if (data.type === 'request_stream' && myStream) {
-                        console.log("Received stream request, calling back...");
-                        peer.call(conn.peer, myStream);
-                    }
-                });
-            });
-
-            // Handle Incoming Calls (Receiving Stream)
             peer.on('call', call => {
-                console.log("Receiving call (stream)...");
-                call.answer(); // Answer without sending stream
-                call.on('stream', remoteStream => {
-                    document.getElementById('msgOverlay').style.display = 'none';
-                    const video = document.getElementById('remoteVideo');
-                    video.srcObject = remoteStream;
+                // Incoming call (View stream)
+                call.answer();
+                call.on('stream', stream => {
+                    showStream(stream);
+                });
+                currentCall = call;
+            });
+        }
+
+        // Firestore Signaling for "Who is presenting?"
+        function setupFirestoreListener() {
+            db.collection('activities').doc(activityId).onSnapshot(doc => {
+                if (!doc.exists) return;
+                const data = doc.data();
+
+                // Permission Check for Student
+                if (mode === 'student') {
+                    const btn = document.getElementById('btn-student-share');
+                    if (btn) {
+                        if (data.studentCanShare) {
+                            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                            btn.disabled = false;
+                        } else {
+                            btn.classList.add('opacity-50', 'cursor-not-allowed');
+                            btn.disabled = true;
+                        }
+                    }
+                }
+
+                // Connect to Presenter if it's not me
+                if (data.presenterPeerId && data.presenterPeerId !== peer.id && data.isPresenting) {
+                    if (currentCall && currentCall.peer === data.presenterPeerId) return; // Already connected
+
+                    // Close existing call
+                    if (currentCall) currentCall.close();
+
+                    console.log("Connecting to presenter:", data.presenterPeerId);
+                    const conn = peer.connect(data.presenterPeerId);
+                    // Actually we need to 'call' to get stream?
+                    // No, usually Presenter calls Viewers (Broadcast) OR Viewers call Presenter (Mesh/SFU).
+                    // PeerJS standard: Caller provides stream? Or Caller requests stream?
+                    // PeerJS: `peer.call(id, stream)` -> Sender calls Receiver.
+                    // So Presenter must call everyone? That's O(N) upload bandwidth.
+                    // Better: Viewer calls Presenter? `peer.call(id, localStream)`. But Viewer has no stream.
+                    // PeerJS doesn't support "pull" stream easily without dummy stream.
+
+                    // Alternative: Presenter updates Firestore.
+                    // Viewers see update. Viewers send "Connection" (`peer.connect`).
+                    // Presenter receives connection. Presenter calls them back with stream.
+
+                    const con = peer.connect(data.presenterPeerId);
+                    con.on('open', () => {
+                        con.send({ type: 'request_stream', peerId: peer.id });
+                    });
+                } else if (!data.isPresenting) {
+                    closeViewer();
+                }
+            });
+
+            // If I am presenter, listen for connection requests to add to call list
+            // Done in peer.on('connection')
+             peer.on('connection', conn => {
+                conn.on('data', data => {
+                    if (data.type === 'request_stream' && isSharing && myStream) {
+                        console.log("Calling back viewer:", data.peerId);
+                        peer.call(data.peerId, myStream);
+                    }
                 });
             });
         }
 
-        function joinRoom(id) {
-            const roomRef = db.collection('activities').where('roomId', '==', roomId);
-
-            unsubscribe = roomRef.onSnapshot(async snap => {
-                if(snap.empty) return;
-                const doc = snap.docs[0];
-                const data = doc.data();
-                const docRef = doc.ref;
-
-                // Handle Permissions
-                const studentCanShare = data.studentCanShare || false;
-
-                // --- Teacher Logic ---
-                if (userRole === 'teacher') {
-                    document.getElementById('teacherControls').style.display = 'flex';
-                    document.getElementById('presenterControls').style.display = 'flex';
-
-                    const btn = document.getElementById('permBtn');
-                    btn.textContent = `生徒の共有を許可: ${studentCanShare ? 'ON' : 'OFF'}`;
-                    btn.className = studentCanShare ? 'btn btn-action' : 'btn btn-secondary';
-                    btn.onclick = () => docRef.update({ studentCanShare: !studentCanShare });
-
-                    // Initial Host Setup if empty
-                    if(!data.presenterPeerId) {
-                        docRef.update({ presenterPeerId: myPeerId, presenterName: '先生' });
-                    }
-                }
-
-                // --- Student Logic ---
-                if (userRole === 'student') {
-                    const btn = document.getElementById('studentShareBtn');
-                    if (studentCanShare) {
-                        btn.disabled = false;
-                        btn.title = "画面共有を開始";
-                        document.getElementById('studentControls').style.display = 'flex';
-                    } else {
-                        btn.disabled = true;
-                        btn.title = "先生の許可が必要です";
-                        document.getElementById('studentControls').style.display = 'flex';
-                        // If I was sharing, stop?
-                        if (currentPresenterId === myPeerId && myStream) {
-                             stopScreenShare();
-                        }
-                    }
-                }
-
-                // --- Connection Logic (Everyone) ---
-                if (data.presenterPeerId && data.presenterPeerId !== currentPresenterId) {
-                    currentPresenterId = data.presenterPeerId;
-                    console.log('New Presenter:', currentPresenterId);
-
-                    if (currentPresenterId === myPeerId) {
-                        // I am the presenter
-                        document.getElementById('statusBadge').textContent = 'You are Presenting';
-                        document.getElementById('statusBadge').classList.add('active');
-                        document.getElementById('overlayText').textContent = '画面共有を開始してください';
-                        document.getElementById('presenterControls').style.display = 'flex';
-                    } else {
-                        // Someone else is presenting
-                        document.getElementById('statusBadge').textContent = `Viewing ${data.presenterName || 'Presenter'}`;
-                        document.getElementById('statusBadge').classList.remove('active');
-                        document.getElementById('overlayText').textContent = `${data.presenterName}の画面を待機中...`;
-
-                        // Hide my presenter controls if I'm not presenter
-                        if (userRole === 'student') {
-                             // Student control remains (to seize), but presenter controls (Stop/Play) hidden
-                             // Actually, only active presenter needs Stop/Play.
-                        }
-
-                        connectToPresenter(currentPresenterId);
-                    }
-                }
-            });
-        }
-
-        async function startScreenShare() {
-            try {
-                myStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-
-                const video = document.getElementById('remoteVideo');
-                video.srcObject = myStream;
-                video.muted = true; // Mute self
-                document.getElementById('msgOverlay').style.display = 'none';
-
-                // Update DB to claim Presenter role
-                if (currentPresenterId !== myPeerId) {
-                    db.collection('activities').where('roomId', '==', roomId).get().then(snap => {
-                        snap.docs[0].ref.update({
-                            presenterPeerId: myPeerId,
-                            presenterName: currentUserData.name
-                        });
-                    });
-                }
-
-                myStream.getVideoTracks()[0].onended = () => stopScreenShare();
-
-            } catch(e) {
-                console.error(e);
-                alert("共有開始エラー: " + e.message);
+        function setupUI() {
+            const controls = document.getElementById('controls');
+            if (mode === 'teacher') {
+                controls.innerHTML = `
+                    <button onclick="toggleShare()" id="btn-share" class="bg-blue-600 px-4 py-2 rounded font-bold">画面共有を開始</button>
+                    <button onclick="togglePermission()" id="btn-perm" class="bg-gray-600 px-4 py-2 rounded text-sm">生徒の共有を許可: OFF</button>
+                `;
+            } else {
+                controls.innerHTML = `
+                    <button onclick="toggleShare()" id="btn-student-share" disabled class="bg-green-600 px-4 py-2 rounded font-bold opacity-50 cursor-not-allowed">画面共有する</button>
+                `;
             }
         }
 
-        function stopScreenShare() {
-            if(myStream) {
-                myStream.getTracks().forEach(track => track.stop());
-                myStream = null;
+        async function toggleShare() {
+            if (isSharing) {
+                // Stop
+                stopSharing();
+            } else {
+                // Start
+                try {
+                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                    myStream = stream;
+                    isSharing = true;
+
+                    const btn = document.getElementById(mode === 'teacher' ? 'btn-share' : 'btn-student-share');
+                    btn.textContent = "共有を停止";
+                    btn.classList.replace('bg-blue-600', 'bg-red-600');
+                    btn.classList.replace('bg-green-600', 'bg-red-600');
+
+                    // Update Firestore to notify others
+                    await db.collection('activities').doc(activityId).set({
+                        presenterPeerId: peer.id,
+                        isPresenting: true
+                    }, { merge: true });
+
+                    // Show local preview?
+                    // Optional.
+
+                    stream.getVideoTracks()[0].onended = () => stopSharing();
+
+                } catch (e) {
+                    console.error(e);
+                    alert("共有に失敗しました");
+                }
             }
-            const video = document.getElementById('remoteVideo');
-            video.srcObject = null;
-            document.getElementById('msgOverlay').style.display = 'block';
-            document.getElementById('overlayText').textContent = '共有停止中';
-
-            // Reset presenter? No, keep role until someone else takes it or session ends.
         }
 
-        function connectToPresenter(destPeerId) {
-            // Initiate Data Connection to request stream
-            const conn = peer.connect(destPeerId);
-            conn.on('open', () => {
-                console.log("Connected to presenter signaling");
-                conn.send({ type: 'request_stream' });
-            });
+        async function stopSharing() {
+            if (myStream) myStream.getTracks().forEach(t => t.stop());
+            isSharing = false;
+            myStream = null;
+
+            const btn = document.getElementById(mode === 'teacher' ? 'btn-share' : 'btn-student-share');
+            btn.textContent = mode === 'teacher' ? "画面共有を開始" : "画面共有する";
+            btn.classList.replace('bg-red-600', mode === 'teacher' ? 'bg-blue-600' : 'bg-green-600');
+
+            await db.collection('activities').doc(activityId).set({
+                isPresenting: false
+            }, { merge: true });
         }
 
-        function requestShare() {
-             startScreenShare();
+        async function togglePermission() {
+            const btn = document.getElementById('btn-perm');
+            const isOff = btn.textContent.includes('OFF');
+            const newState = isOff;
+
+            await db.collection('activities').doc(activityId).set({
+                studentCanShare: newState
+            }, { merge: true });
+
+            btn.textContent = `生徒の共有を許可: ${newState ? 'ON' : 'OFF'}`;
+            btn.className = newState ? "bg-green-600 px-4 py-2 rounded text-sm" : "bg-gray-600 px-4 py-2 rounded text-sm";
         }
 
-        function exitSession() {
-             window.history.back();
+        function showStream(stream) {
+            const viewer = document.getElementById('fullscreen-viewer');
+            const video = document.getElementById('remote-video');
+            video.srcObject = stream;
+            viewer.style.display = 'flex';
+        }
+
+        function closeViewer() {
+            document.getElementById('fullscreen-viewer').style.display = 'none';
+            document.getElementById('remote-video').srcObject = null;
         }
 
     </script>

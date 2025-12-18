@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>テナント管理画面</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+    <script src="js/auth.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-indigo-800 text-white p-4 flex justify-between items-center">
+        <h1 class="text-xl font-bold">テナント管理 (学校管理)</h1>
+        <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded">ログアウト</button>
+    </nav>
+
+    <div class="container mx-auto p-8">
+        <div id="tenant-info" class="mb-8 p-4 bg-white rounded shadow">
+            <h2 class="text-xl font-bold text-gray-800">読み込み中...</h2>
+        </div>
+
+        <!-- Add School -->
+        <div class="bg-white p-6 rounded shadow mb-8">
+            <h3 class="text-lg font-bold mb-4">新しい学校を追加</h3>
+            <div class="flex gap-4">
+                <input type="text" id="new-school-name" placeholder="学校名 (例: 渋谷小学校)" class="border p-2 rounded flex-grow">
+                <button onclick="createSchool()" class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700">作成</button>
+            </div>
+        </div>
+
+        <!-- Schools List -->
+        <div class="bg-white p-6 rounded shadow">
+            <h3 class="text-lg font-bold mb-4">学校一覧 & 設定</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full leading-normal">
+                    <thead>
+                        <tr>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">学校名</th>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">毎日の記録機能</th>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="school-list">
+                        <!-- Items -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTenantId = null;
+
+        auth.onAuthStateChanged(async user => {
+            if (user) {
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                if (userDoc.exists) {
+                    if (userDoc.data().role !== 'tenant_admin' && userDoc.data().role !== 'super_admin') {
+                         alert('権限がありません');
+                         window.location.href = 'login.html';
+                         return;
+                    }
+                    currentTenantId = userDoc.data().tenantId;
+                    loadTenantInfo();
+                    loadSchools();
+                }
+            } else {
+                window.location.href = 'login.html';
+            }
+        });
+
+        async function loadTenantInfo() {
+            const doc = await db.collection('tenants').doc(currentTenantId).get();
+            if (doc.exists) {
+                document.querySelector('#tenant-info h2').textContent = `テナント: ${doc.data().name}`;
+            }
+        }
+
+        async function loadSchools() {
+            const list = document.getElementById('school-list');
+            list.innerHTML = '';
+
+            const snap = await db.collection('schools').where('tenantId', '==', currentTenantId).get();
+            snap.forEach(doc => {
+                const data = doc.data();
+                const tr = document.createElement('tr');
+
+                const isDailyRecordEnabled = data.features && data.features.dailyRecord === true;
+                const statusText = isDailyRecordEnabled ? '<span class="text-green-600 font-bold">有効</span>' : '<span class="text-gray-400">無効</span>';
+                const toggleBtnText = isDailyRecordEnabled ? '無効にする' : '有効にする';
+                const toggleBtnColor = isDailyRecordEnabled ? 'bg-gray-500' : 'bg-green-500';
+
+                tr.innerHTML = `
+                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
+                        <p class="text-gray-900 whitespace-no-wrap">${data.name}</p>
+                    </td>
+                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
+                        <p class="text-gray-600 whitespace-no-wrap">${doc.id}</p>
+                    </td>
+                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
+                        ${statusText}
+                    </td>
+                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm flex gap-2">
+                        <button onclick="toggleDailyRecord('${doc.id}', ${!isDailyRecordEnabled})" class="${toggleBtnColor} text-white px-3 py-1 rounded text-xs hover:opacity-80">${toggleBtnText}</button>
+                        <button onclick="inviteSchoolAdmin('${doc.id}')" class="bg-blue-500 text-white px-3 py-1 rounded text-xs hover:bg-blue-600">管理者招待</button>
+                    </td>
+                `;
+                list.appendChild(tr);
+            });
+        }
+
+        async function createSchool() {
+            const name = document.getElementById('new-school-name').value;
+            if (!name) return;
+
+            try {
+                await db.collection('schools').add({
+                    name: name,
+                    tenantId: currentTenantId,
+                    features: { dailyRecord: true },
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                document.getElementById('new-school-name').value = '';
+                loadSchools();
+            } catch (e) {
+                console.error(e);
+                alert('作成失敗');
+            }
+        }
+
+        async function toggleDailyRecord(schoolId, newState) {
+            try {
+                await db.collection('schools').doc(schoolId).update({
+                    'features.dailyRecord': newState
+                });
+                loadSchools();
+            } catch (e) {
+                console.error(e);
+                alert('更新失敗');
+            }
+        }
+
+        async function inviteSchoolAdmin(schoolId) {
+            const email = prompt("学校管理者にするユーザーのメールアドレスを入力してください:");
+            if (!email) return;
+
+            try {
+                await db.collection('whitelist').add({
+                    email: email,
+                    role: 'school_admin',
+                    tenantId: currentTenantId,
+                    schoolId: schoolId,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                alert('招待しました。ユーザーがログインすると有効になります。');
+            } catch (e) {
+                alert('招待失敗: ' + e.message);
+            }
+        }
+    </script>
+</body>
+</html>

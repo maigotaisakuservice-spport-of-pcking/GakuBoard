@@ -3,19 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GAKU-Board リアルタイムホワイトボード</title>
+    <title>GAKU-Board ホワイトボード</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="styles.css">
 
     <!-- Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="js/firebase-config.js"></script>
     <script src="js/firebase-init.js"></script>
 
     <!-- PeerJS -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
 
     <style>
         body, html { margin: 0; overflow: hidden; height: 100%; background: #eee; }
@@ -73,8 +72,9 @@
     <script>
         // URL Params
         const params = new URLSearchParams(window.location.search);
-        const roomId = params.get('room');
-        const role = params.get('role'); // 'teacher' or 'student'
+        const classId = params.get('classId');
+        const mode = params.get('mode'); // 'teacher' or 'student'
+        const activityId = `whiteboard_${classId}`;
 
         // Canvas Setup
         const canvas = document.getElementById('whiteboard');
@@ -89,7 +89,7 @@
         // P2P State
         let peer;
         let connections = []; // Teacher: list of student conns. Student: [teacherConn]
-        let canDraw = (role === 'teacher'); // Default permission
+        let canDraw = (mode === 'teacher'); // Default permission
 
         function resizeCanvas() {
             canvas.width = window.innerWidth;
@@ -103,13 +103,14 @@
         // ------------------
         auth.onAuthStateChanged(async user => {
             if (!user) {
-                window.location.href = 'index.html';
+                window.location.href = 'login.html';
                 return;
             }
+            if (!classId) return alert("Class ID missing");
 
-            document.getElementById('roleDisplay').textContent = role === 'teacher' ? '先生モード' : '生徒モード';
+            document.getElementById('roleDisplay').textContent = mode === 'teacher' ? '先生モード' : '生徒モード';
 
-            if (role === 'teacher') {
+            if (mode === 'teacher') {
                 initTeacher(user);
                 document.getElementById('studentDrawToggle').style.display = 'block';
             } else {
@@ -121,32 +122,27 @@
         // PeerJS Setup
         // ------------------
         function initTeacher(user) {
-            // Teacher ID is consistent based on roomId to make it easy for students to connect?
-            // Actually, PeerJS IDs must be unique. Let's rely on Firestore to exchange IDs.
-
-            peer = new Peer(); // Auto-gen ID
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                secure: true
+            });
 
             peer.on('open', (id) => {
                 console.log('My Peer ID:', id);
                 document.getElementById('statusDisplay').textContent = 'Online (Waiting for students)';
 
-                // Save PeerID to Firestore Room
-                db.collection('activities').where('roomId', '==', roomId).get().then(snap => {
-                    if(!snap.empty) {
-                         snap.docs[0].ref.update({
-                             hostPeerId: id,
-                             studentCanDraw: false
-                         });
-                    }
-                });
+                // Save PeerID to Firestore
+                db.collection('activities').doc(activityId).set({
+                    hostPeerId: id,
+                    studentCanDraw: false,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
             });
 
             peer.on('connection', (conn) => {
                 console.log('Student connected:', conn.peer);
                 connections.push(conn);
-
-                // Send current board state? (Advanced: implement history replay)
-                // For MVP, just new strokes.
 
                 conn.on('data', (data) => {
                     // Receive data from student (if allowed)
@@ -164,13 +160,17 @@
         }
 
         function initStudent(user) {
-            peer = new Peer();
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                secure: true
+            });
 
             peer.on('open', () => {
                 // Get Teacher's PeerID from Firestore
-                db.collection('activities').where('roomId', '==', roomId).onSnapshot(snap => {
-                    if(snap.empty) return;
-                    const data = snap.docs[0].data();
+                db.collection('activities').doc(activityId).onSnapshot(doc => {
+                    if(!doc.exists) return;
+                    const data = doc.data();
                     const hostId = data.hostPeerId;
 
                     // Update permissions
@@ -247,7 +247,7 @@
                 width: currentWidth
             };
 
-            if (role === 'teacher') {
+            if (mode === 'teacher') {
                 broadcast(data);
             } else {
                 // Send to teacher
@@ -297,9 +297,8 @@
                 ctx.globalCompositeOperation = 'source-over';
             } else {
                 document.getElementById('eraserBtn').classList.add('active');
-                currentColor = '#ffffff'; // Eraser acts as white paint for simplicity (or destination-out)
+                currentColor = '#ffffff';
                 currentWidth = 20;
-                // ctx.globalCompositeOperation = 'destination-out'; // Better eraser
             }
         }
 
@@ -309,31 +308,27 @@
         }
 
         function clearBoard() {
-            if (role !== 'teacher') return;
+            if (mode !== 'teacher') return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             broadcast({ type: 'clear' });
         }
 
         function toggleStudentDraw() {
-            if (role !== 'teacher') return;
+            if (mode !== 'teacher') return;
             const statusSpan = document.getElementById('studentDrawStatus');
             const isCurrentlyOff = statusSpan.textContent === 'OFF';
 
             const newState = isCurrentlyOff; // Toggle
             statusSpan.textContent = newState ? 'ON' : 'OFF';
 
-            // Update Firestore so new joiners know
-             db.collection('activities').where('roomId', '==', roomId).get().then(snap => {
-                if(!snap.empty) {
-                     snap.docs[0].ref.update({
-                         studentCanDraw: newState
-                     });
-                }
-            });
+            // Update Firestore
+            db.collection('activities').doc(activityId).set({
+                studentCanDraw: newState
+            }, { merge: true });
         }
 
         function exitBoard() {
-            window.history.back();
+            window.close(); // Since it's opened in new tab
         }
 
         // Event Listeners
@@ -342,8 +337,8 @@
         canvas.addEventListener('mouseup', endDraw);
         canvas.addEventListener('mouseout', endDraw);
 
-        canvas.addEventListener('touchstart', startDraw);
-        canvas.addEventListener('touchmove', moveDraw);
+        canvas.addEventListener('touchstart', startDraw, {passive: false});
+        canvas.addEventListener('touchmove', moveDraw, {passive: false});
         canvas.addEventListener('touchend', endDraw);
 
     </script>
