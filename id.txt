@@ -1,0 +1,10 @@
+pcdaimaou@gmail.com ←　スーパー管理者
+アカウントパスワード:学校パスワード
+admin@test.com　←　テナント管理者
+アカウントパスワード:学校パスワード
+miikun2026@gmail.com←学校管理者
+アカウントパスワード:学校パスワード
+test@seito.com ← 生徒 
+アカウントパスワード:test2024
+test@tea.com ← 教師 
+アカウントパスワード:学校パスワード
