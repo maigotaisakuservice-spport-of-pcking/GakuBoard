@@ -150,6 +150,7 @@
                     name: decodeURIComponent(boardName),
                     hostPeerId: id,
                     studentCanDraw: false,
+                    studentCount: 0,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
             });
@@ -172,6 +173,19 @@
         }
 
         function initStudent(user) {
+            // Increment Count
+            const boardRef = db.collection('classes').doc(classId).collection('active_boards').doc(boardId);
+            boardRef.update({
+                studentCount: firebase.firestore.FieldValue.increment(1)
+            });
+
+            // Decrement on exit
+            window.addEventListener('beforeunload', () => {
+                 boardRef.update({
+                    studentCount: firebase.firestore.FieldValue.increment(-1)
+                });
+            });
+
             peer = new Peer({
                 host: '0.peerjs.com',
                 port: 443,
@@ -180,7 +194,7 @@
 
             peer.on('open', () => {
                 // Get Host PeerID from Firestore
-                db.collection('classes').doc(classId).collection('active_boards').doc(boardId).onSnapshot(doc => {
+                boardRef.onSnapshot(doc => {
                     if(!doc.exists) {
                         alert("先生がボードを閉じました");
                         window.close();

@@ -162,8 +162,12 @@ function loadActivities() {
             const data = doc.data();
             const div = document.createElement('div');
             div.className = "flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100";
+            const count = data.studentCount || 0;
             div.innerHTML = `
-                <span class="font-bold text-blue-900">${data.name}</span>
+                <div>
+                    <span class="font-bold text-blue-900 block">${data.name}</span>
+                    <span class="text-xs text-blue-500">参加人数: ${count}人</span>
+                </div>
                 <button onclick="joinActivity('whiteboard', '${doc.id}')" class="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700">参加</button>
             `;
             list.appendChild(div);
