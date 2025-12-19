@@ -48,6 +48,7 @@
         <div class="tool-group">
             <button onclick="exitBoard()" class="btn-tool"><i class="fas fa-arrow-left"></i> 退出</button>
             <span id="roleDisplay" style="font-weight:bold; margin-top:5px;">Loading...</span>
+            <span id="boardNameDisplay" class="ml-2 text-sm text-gray-300"></span>
         </div>
 
         <div class="tool-group">
@@ -73,8 +74,14 @@
         // URL Params
         const params = new URLSearchParams(window.location.search);
         const classId = params.get('classId');
+        const boardId = params.get('boardId');
+        const boardName = params.get('name') || 'Whiteboard';
         const mode = params.get('mode'); // 'teacher' or 'student'
-        const activityId = `whiteboard_${classId}`;
+
+        // Peer Logic: Host ID based on boardId
+        // Using a deterministic ID for Host makes it easier for students to connect without looking up Firestore again for PeerID (though we use Firestore for metadata)
+        // But PeerJS IDs must be unique globally? Prefix with app name.
+        // Let's rely on Firestore metadata to get Host Peer ID to be safe.
 
         // Canvas Setup
         const canvas = document.getElementById('whiteboard');
@@ -106,13 +113,19 @@
                 window.location.href = 'login.html';
                 return;
             }
-            if (!classId) return alert("Class ID missing");
+            if (!classId || !boardId) return alert("Class/Board ID missing");
 
             document.getElementById('roleDisplay').textContent = mode === 'teacher' ? '先生モード' : '生徒モード';
+            document.getElementById('boardNameDisplay').textContent = decodeURIComponent(boardName);
 
             if (mode === 'teacher') {
                 initTeacher(user);
                 document.getElementById('studentDrawToggle').style.display = 'block';
+
+                // Cleanup on exit
+                window.addEventListener('beforeunload', () => {
+                     db.collection('classes').doc(classId).collection('active_boards').doc(boardId).delete();
+                });
             } else {
                 initStudent(user);
             }
@@ -132,12 +145,13 @@
                 console.log('My Peer ID:', id);
                 document.getElementById('statusDisplay').textContent = 'Online (Waiting for students)';
 
-                // Save PeerID to Firestore
-                db.collection('activities').doc(activityId).set({
+                // Register Board
+                db.collection('classes').doc(classId).collection('active_boards').doc(boardId).set({
+                    name: decodeURIComponent(boardName),
                     hostPeerId: id,
                     studentCanDraw: false,
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true });
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
             });
 
             peer.on('connection', (conn) => {
@@ -145,10 +159,8 @@
                 connections.push(conn);
 
                 conn.on('data', (data) => {
-                    // Receive data from student (if allowed)
                     if (data.type === 'draw') {
                         drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width);
-                        // Broadcast to other students
                         broadcast(data, conn.peer);
                     }
                 });
@@ -167,13 +179,18 @@
             });
 
             peer.on('open', () => {
-                // Get Teacher's PeerID from Firestore
-                db.collection('activities').doc(activityId).onSnapshot(doc => {
-                    if(!doc.exists) return;
+                // Get Host PeerID from Firestore
+                db.collection('classes').doc(classId).collection('active_boards').doc(boardId).onSnapshot(doc => {
+                    if(!doc.exists) {
+                        alert("先生がボードを閉じました");
+                        window.close();
+                        window.location.href = 'student-dashboard.html';
+                        return;
+                    }
+
                     const data = doc.data();
                     const hostId = data.hostPeerId;
 
-                    // Update permissions
                     if (data.studentCanDraw !== undefined) {
                         canDraw = data.studentCanDraw;
                         document.getElementById('statusDisplay').textContent =
@@ -192,7 +209,7 @@
             const conn = peer.connect(hostId);
 
             conn.on('open', () => {
-                document.getElementById('statusDisplay').textContent = 'Connected to Class';
+                document.getElementById('statusDisplay').textContent = 'Connected';
                 connections = [conn];
             });
 
@@ -238,7 +255,6 @@
 
             drawOnCanvas(lastX, lastY, pos.x, pos.y, currentColor, currentWidth);
 
-            // Send Data
             const data = {
                 type: 'draw',
                 x0: lastX, y0: lastY,
@@ -250,7 +266,6 @@
             if (mode === 'teacher') {
                 broadcast(data);
             } else {
-                // Send to teacher
                 if (connections.length > 0) connections[0].send(data);
             }
 
@@ -273,9 +288,6 @@
             ctx.closePath();
         }
 
-        // ------------------
-        // Networking Utils
-        // ------------------
         function broadcast(data, excludePeerId = null) {
             connections.forEach(conn => {
                 if (conn.peer !== excludePeerId) {
@@ -284,9 +296,6 @@
             });
         }
 
-        // ------------------
-        // UI Actions
-        // ------------------
         function setTool(tool) {
             currentTool = tool;
             document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
@@ -318,20 +327,19 @@
             const statusSpan = document.getElementById('studentDrawStatus');
             const isCurrentlyOff = statusSpan.textContent === 'OFF';
 
-            const newState = isCurrentlyOff; // Toggle
+            const newState = isCurrentlyOff;
             statusSpan.textContent = newState ? 'ON' : 'OFF';
 
             // Update Firestore
-            db.collection('activities').doc(activityId).set({
+            db.collection('classes').doc(classId).collection('active_boards').doc(boardId).update({
                 studentCanDraw: newState
-            }, { merge: true });
+            });
         }
 
         function exitBoard() {
-            window.close(); // Since it's opened in new tab
+            window.close();
         }
 
-        // Event Listeners
         canvas.addEventListener('mousedown', startDraw);
         canvas.addEventListener('mousemove', moveDraw);
         canvas.addEventListener('mouseup', endDraw);

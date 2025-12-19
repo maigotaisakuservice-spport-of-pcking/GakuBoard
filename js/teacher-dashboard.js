@@ -2,6 +2,7 @@
 
 let currentUser = null;
 let currentClassId = null;
+let wbUnsubscribe = null;
 
 // Init
 auth.onAuthStateChanged(async user => {
@@ -36,7 +37,10 @@ function showSection(id) {
     if (id === 'daily') loadDailyRecords();
     if (id === 'portal') loadPortalLinks();
     if (id === 'announce') loadAnnouncements();
-    if (id === 'home') loadHomeStats();
+    if (id === 'home') {
+        loadHomeStats();
+        loadWhiteboards();
+    }
 }
 
 // --- HOME ---
@@ -71,7 +75,66 @@ async function loadHomeStats() {
 
 function launchActivity(type) {
     if (!currentClassId) return alert("クラス設定エラー");
+    // Only for screenshare now, whiteboard uses specific function
     const url = `${type}.html?classId=${currentClassId}&mode=teacher`;
+    window.open(url, '_blank');
+}
+
+// --- WHITEBOARDS ---
+function loadWhiteboards() {
+    if (wbUnsubscribe) wbUnsubscribe();
+
+    const list = document.getElementById('wb-list');
+    const btn = document.getElementById('btn-create-wb');
+
+    wbUnsubscribe = db.collection('classes').doc(currentClassId).collection('active_boards')
+        .onSnapshot(snap => {
+            list.innerHTML = '';
+            const count = snap.size;
+
+            if (count >= 5) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+                btn.innerText = "上限";
+            } else {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                btn.innerText = "作成";
+            }
+
+            if (snap.empty) {
+                list.innerHTML = '<p class="text-xs text-gray-400">現在アクティブなボードはありません</p>';
+                return;
+            }
+
+            snap.forEach(doc => {
+                const data = doc.data();
+                const div = document.createElement('div');
+                div.className = "flex justify-between items-center bg-blue-50 p-2 rounded border border-blue-100";
+                div.innerHTML = `
+                    <span class="text-sm font-bold text-blue-800 truncate flex-grow mr-2">${data.name}</span>
+                    <button onclick="joinWhiteboard('${doc.id}', '${data.name}')" class="text-xs bg-white border border-blue-300 px-2 py-1 rounded text-blue-600 hover:bg-blue-100">開く</button>
+                `;
+                list.appendChild(div);
+            });
+        });
+}
+
+function createWhiteboard() {
+    const nameInput = document.getElementById('new-wb-name');
+    const name = nameInput.value;
+    if (!name) return alert("名前を入力してください");
+
+    // Generate ID
+    const boardId = 'wb_' + Math.random().toString(36).substr(2, 9);
+
+    // Open
+    joinWhiteboard(boardId, name);
+    nameInput.value = '';
+}
+
+function joinWhiteboard(boardId, name) {
+    const url = `whiteboard.html?classId=${currentClassId}&boardId=${boardId}&name=${encodeURIComponent(name)}&mode=teacher`;
     window.open(url, '_blank');
 }
 
@@ -98,10 +161,6 @@ async function loadDailyRecords() {
         list.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">データなし</td></tr>';
         return;
     }
-
-    // Need to fetch student names? Or assume stored in record?
-    // Optimization: Store studentName in record to avoid N+1 queries.
-    // Assuming record has studentName.
 
     snap.forEach(doc => {
         const d = doc.data();

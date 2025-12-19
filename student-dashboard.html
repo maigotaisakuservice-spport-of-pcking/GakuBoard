@@ -67,15 +67,25 @@
         </section>
 
         <!-- Activity Launcher -->
-        <section class="grid grid-cols-2 gap-4">
-            <button onclick="joinActivity('whiteboard')" class="bg-white p-6 rounded-xl shadow border-b-4 border-blue-500 hover:bg-blue-50 transition flex flex-col items-center">
-                <span class="text-4xl mb-2">🎨</span>
-                <span class="font-bold text-blue-800">お絵かきボード</span>
-            </button>
-            <button onclick="joinActivity('screenshare')" class="bg-white p-6 rounded-xl shadow border-b-4 border-green-500 hover:bg-green-50 transition flex flex-col items-center">
-                <span class="text-4xl mb-2">📺</span>
-                <span class="font-bold text-green-800">先生の画面を見る</span>
-            </button>
+        <section class="space-y-4">
+            <!-- Screen Share -->
+            <div id="ss-card" class="bg-white p-6 rounded-xl shadow border-b-4 border-gray-300 transition flex items-center justify-between opacity-50">
+                 <div class="flex items-center gap-4">
+                    <span class="text-4xl">📺</span>
+                    <div>
+                        <p class="font-bold text-gray-800" id="ss-status-text">先生の画面共有 (待機中)</p>
+                    </div>
+                 </div>
+                 <button id="btn-join-ss" disabled onclick="joinActivity('screenshare')" class="bg-gray-400 text-white px-6 py-2 rounded font-bold cursor-not-allowed">参加</button>
+            </div>
+
+            <!-- Whiteboards -->
+            <div class="bg-white p-6 rounded-xl shadow border-b-4 border-blue-500">
+                <h2 class="font-bold text-lg mb-4 text-blue-800 flex items-center gap-2"><span>🎨</span> お絵かきボード</h2>
+                <div id="wb-list" class="space-y-3">
+                    <p class="text-gray-500 text-sm">現在開催中のボードはありません</p>
+                </div>
+            </div>
         </section>
 
         <!-- Learning Portal -->

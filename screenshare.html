@@ -164,6 +164,23 @@
             });
         }
 
+        // Cleanup on teacher exit
+        if (mode === 'teacher') {
+            window.addEventListener('beforeunload', () => {
+                // Try to set isPresenting false. Note: this might not complete in beforeunload.
+                // Navigator.sendBeacon is better but Firestore REST API is complex.
+                // We rely on 'onDisconnect' if using RTDB, but this is Firestore.
+                // Best effort:
+                db.collection('activities').doc(activityId).update({ isPresenting: false });
+            });
+
+            // Set Presenting True initially? No, only when sharing starts?
+            // User requirement: "Teacher creates the place... when closed, delete".
+            // So if Teacher opens the page, the "Place" is created?
+            // Let's assume the "Session" exists as long as the Teacher has the page open.
+            db.collection('activities').doc(activityId).set({ isPresenting: false }, { merge: true }); // Reset on load
+        }
+
         function setupUI() {
             const controls = document.getElementById('controls');
             if (mode === 'teacher') {
@@ -175,6 +192,17 @@
                 controls.innerHTML = `
                     <button onclick="toggleShare()" id="btn-student-share" disabled class="bg-green-600 px-4 py-2 rounded font-bold opacity-50 cursor-not-allowed">画面共有する</button>
                 `;
+
+                // Student listener for session end
+                db.collection('activities').doc(activityId).onSnapshot(doc => {
+                    const data = doc.data();
+                    if (!data || !data.isPresenting) {
+                         alert("先生が共有を終了しました");
+                         window.close();
+                         // Or redirect back
+                         window.location.href = 'student-dashboard.html';
+                    }
+                });
             }
         }
 

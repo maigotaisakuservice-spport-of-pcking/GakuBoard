@@ -21,6 +21,7 @@ auth.onAuthStateChanged(async user => {
             checkDailySubmission();
             loadPortal();
             loadAnnouncements();
+            loadActivities();
         }
     } else {
         window.location.href = 'login.html';
@@ -119,8 +120,63 @@ async function loadAnnouncements() {
     });
 }
 
-function joinActivity(type) {
+function loadActivities() {
+    // Screen Share
+    db.collection('activities').doc(`screenshare_${currentClassId}`).onSnapshot(doc => {
+        const card = document.getElementById('ss-card');
+        const btn = document.getElementById('btn-join-ss');
+        const txt = document.getElementById('ss-status-text');
+
+        const isPresenting = doc.exists && doc.data().isPresenting;
+
+        if (isPresenting) {
+            card.classList.remove('opacity-50', 'border-gray-300');
+            card.classList.add('border-green-500');
+            btn.disabled = false;
+            btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+            btn.classList.add('bg-green-600', 'hover:bg-green-700');
+            txt.textContent = "先生の画面共有 (開催中)";
+            txt.classList.add('text-green-800');
+        } else {
+            card.classList.add('opacity-50', 'border-gray-300');
+            card.classList.remove('border-green-500');
+            btn.disabled = true;
+            btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+            txt.textContent = "先生の画面共有 (待機中)";
+            txt.classList.remove('text-green-800');
+        }
+    });
+
+    // Whiteboards
+    db.collection('classes').doc(currentClassId).collection('active_boards').onSnapshot(snap => {
+        const list = document.getElementById('wb-list');
+        list.innerHTML = '';
+
+        if (snap.empty) {
+            list.innerHTML = '<p class="text-gray-500 text-sm">現在開催中のボードはありません</p>';
+            return;
+        }
+
+        snap.forEach(doc => {
+            const data = doc.data();
+            const div = document.createElement('div');
+            div.className = "flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100";
+            div.innerHTML = `
+                <span class="font-bold text-blue-900">${data.name}</span>
+                <button onclick="joinActivity('whiteboard', '${doc.id}')" class="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700">参加</button>
+            `;
+            list.appendChild(div);
+        });
+    });
+}
+
+function joinActivity(type, boardId) {
     if (!currentClassId) return;
-    const url = `${type}.html?classId=${currentClassId}&mode=student`;
-    window.location.href = url;
+
+    if (type === 'screenshare') {
+        window.location.href = `screenshare.html?classId=${currentClassId}&mode=student`;
+    } else if (type === 'whiteboard') {
+        window.location.href = `whiteboard.html?classId=${currentClassId}&boardId=${boardId}&mode=student`;
+    }
 }
