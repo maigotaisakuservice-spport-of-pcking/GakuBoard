@@ -45,9 +45,26 @@ async function checkDailySubmission() {
         const todayStr = new Date().toDateString();
 
         let submittedToday = false;
+        const now = new Date();
+        const todayY = now.getFullYear();
+        const todayM = now.getMonth();
+        const todayD = now.getDate();
+
         snap.forEach(doc => {
             const data = doc.data();
-            if (data.createdAt && data.createdAt.toDate().toDateString() === todayStr) {
+            let rDate;
+
+            // Handle pending writes where serverTimestamp is not yet resolved (null)
+            if (data.createdAt) {
+                rDate = data.createdAt.toDate();
+            } else {
+                // If null, it's a local pending write -> "Just now" -> Today
+                rDate = new Date();
+            }
+
+            if (rDate.getFullYear() === todayY &&
+                rDate.getMonth() === todayM &&
+                rDate.getDate() === todayD) {
                 submittedToday = true;
             }
         });
