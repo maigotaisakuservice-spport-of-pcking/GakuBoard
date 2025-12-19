@@ -35,17 +35,29 @@ function selectMood(mood, btn) {
 }
 
 async function checkDailySubmission() {
-    const today = new Date();
-    today.setHours(0,0,0,0);
+    try {
+        // Query by studentId only to avoid composite index requirement (studentId + createdAt)
+        // Client-side filtering is acceptable for prototype data volumes
+        const snap = await db.collection('daily_records')
+            .where('studentId', '==', currentUser.uid)
+            .get();
 
-    const snap = await db.collection('daily_records')
-        .where('studentId', '==', currentUser.uid)
-        .where('createdAt', '>=', today)
-        .get();
+        const todayStr = new Date().toDateString();
 
-    if (!snap.empty) {
-        document.getElementById('daily-form').classList.add('hidden');
-        document.getElementById('daily-done').classList.remove('hidden');
+        let submittedToday = false;
+        snap.forEach(doc => {
+            const data = doc.data();
+            if (data.createdAt && data.createdAt.toDate().toDateString() === todayStr) {
+                submittedToday = true;
+            }
+        });
+
+        if (submittedToday) {
+            document.getElementById('daily-form').classList.add('hidden');
+            document.getElementById('daily-done').classList.remove('hidden');
+        }
+    } catch (e) {
+        console.error("Error checking daily submission:", e);
     }
 }
 
