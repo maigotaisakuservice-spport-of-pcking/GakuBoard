@@ -40,13 +40,14 @@
                 <h3 class="text-lg font-bold mb-4">ユーザー招待 (先生・生徒)</h3>
                 <div class="flex flex-col gap-4">
                     <div class="flex gap-2">
+                        <input type="text" id="target-name" placeholder="名前 (例: 山田 太郎)" class="border p-2 rounded w-1/3">
                         <input type="email" id="target-email" placeholder="メールアドレス" class="border p-2 rounded flex-grow">
+                    </div>
+                    <div class="flex gap-2">
                         <select id="target-role" class="border p-2 rounded">
                             <option value="student">生徒</option>
                             <option value="teacher">先生</option>
                         </select>
-                    </div>
-                    <div class="flex gap-2">
                         <select id="assign-class-select" class="border p-2 rounded flex-grow">
                             <option value="">クラスを選択 (所属なし)</option>
                         </select>
@@ -68,6 +69,7 @@
                             <th class="p-2">名前/Email</th>
                             <th class="p-2">ロール</th>
                             <th class="p-2">クラスID</th>
+                            <th class="p-2">操作</th>
                         </tr>
                     </thead>
                     <tbody id="users-list"></tbody>
@@ -119,7 +121,12 @@
                 const data = doc.data();
                 const li = document.createElement('li');
                 li.className = 'py-2 flex justify-between items-center';
-                li.innerHTML = `<span>${data.name}</span> <span class="text-gray-400 text-xs">${doc.id}</span>`;
+                li.innerHTML = `
+                    <div>
+                        <span>${data.name}</span> <span class="text-gray-400 text-xs ml-2">${doc.id}</span>
+                    </div>
+                    <button onclick="deleteClass('${doc.id}')" class="text-red-500 text-xs border border-red-500 px-2 py-1 rounded hover:bg-red-50">削除</button>
+                `;
                 list.appendChild(li);
 
                 const opt = document.createElement('option');
@@ -127,6 +134,12 @@
                 opt.textContent = data.name;
                 select.appendChild(opt);
             });
+        }
+
+        async function deleteClass(id) {
+            if(!confirm("クラスを削除しますか？(所属ユーザーはそのままになります)")) return;
+            await db.collection('classes').doc(id).delete();
+            loadClasses();
         }
 
         async function createClass() {
@@ -149,16 +162,18 @@
         }
 
         async function inviteUser() {
+            const name = document.getElementById('target-name').value;
             const email = document.getElementById('target-email').value;
             const role = document.getElementById('target-role').value;
             const classId = document.getElementById('assign-class-select').value;
 
-            if (!email) return alert('メールアドレスを入力してください');
+            if (!email || !name) return alert('名前とメールアドレスを入力してください');
 
             try {
                 const inviteData = {
                     email: email,
                     role: role,
+                    name: name,
                     schoolId: currentSchoolId,
                     tenantId: currentTenantId,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -170,6 +185,7 @@
                 await db.collection('whitelist').add(inviteData);
                 alert('招待しました。ユーザーがログインすると所属が確定します。');
                 document.getElementById('target-email').value = '';
+                document.getElementById('target-name').value = '';
             } catch (e) {
                 console.error(e);
                 alert('招待失敗: ' + e.message);
@@ -189,13 +205,22 @@
                         <td class="p-2 border font-mono text-xs">${data.name || data.email}</td>
                         <td class="p-2 border">${data.role}</td>
                         <td class="p-2 border">${data.classId || '-'}</td>
+                        <td class="p-2 border">
+                            <button onclick="deleteUser('${doc.id}')" class="text-red-500 text-xs hover:underline">削除</button>
+                        </td>
                     `;
                     tbody.appendChild(tr);
                 });
             } catch (e) {
                 console.error("User list load error:", e);
-                tbody.innerHTML = '<tr><td colspan="3">読み込みエラー (インデックス未作成の可能性があります)</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4">読み込みエラー (インデックス未作成の可能性があります)</td></tr>';
             }
+        }
+
+        async function deleteUser(uid) {
+            if(!confirm("ユーザーを削除しますか？")) return;
+            await db.collection('users').doc(uid).delete();
+            loadUsers();
         }
     </script>
 </body>

@@ -41,11 +41,29 @@
         </div>
 
         <!-- Tenant List -->
-        <div class="bg-white p-6 rounded shadow">
+        <div class="bg-white p-6 rounded shadow mb-8">
             <h2 class="text-2xl font-bold mb-4">テナント一覧</h2>
             <ul id="tenant-list" class="divide-y divide-gray-200">
                 <!-- List items here -->
             </ul>
+        </div>
+
+        <!-- Tenant Admins List -->
+        <div class="bg-white p-6 rounded shadow">
+            <h2 class="text-2xl font-bold mb-4">テナント管理者一覧</h2>
+            <button onclick="loadTenantAdmins()" class="text-blue-500 underline text-sm mb-2">更新</button>
+            <div class="overflow-x-auto">
+                <table class="min-w-full leading-normal">
+                    <thead>
+                        <tr>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">名前/Email</th>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">テナントID</th>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-list"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -59,14 +77,12 @@
                     if(!doc.exists || doc.data().role !== 'super_admin') {
                         alert('権限がありません');
                         window.location.href = 'login.html';
+                    } else {
+                        loadTenants();
+                        loadTenantAdmins();
                     }
                 });
             }
-        });
-
-        // Load tenants on start
-        window.addEventListener('DOMContentLoaded', () => {
-             loadTenants();
         });
 
         async function loadTenants() {
@@ -85,6 +101,7 @@
                         <p class="font-bold text-lg">${data.name}</p>
                         <p class="text-sm text-gray-500">ID: ${doc.id}</p>
                     </div>
+                    <button onclick="deleteTenant('${doc.id}')" class="text-red-500 border border-red-500 px-3 py-1 rounded text-sm hover:bg-red-50">削除</button>
                 `;
                 list.appendChild(li);
 
@@ -113,6 +130,12 @@
             }
         }
 
+        async function deleteTenant(id) {
+            if(!confirm("テナントを削除しますか？(所属データはそのままになります)")) return;
+            await db.collection('tenants').doc(id).delete();
+            loadTenants();
+        }
+
         async function inviteTenantAdmin() {
             const tenantId = document.getElementById('tenant-select').value;
             const email = document.getElementById('target-email').value;
@@ -133,6 +156,33 @@
                 console.error(e);
                 alert('設定失敗: ' + e.message);
             }
+        }
+
+        async function loadTenantAdmins() {
+            const list = document.getElementById('admin-list');
+            list.innerHTML = '';
+
+            try {
+                const snap = await db.collection('users').where('role', '==', 'tenant_admin').limit(50).get();
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">${data.name || data.email}</td>
+                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">${data.tenantId}</td>
+                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
+                             <button onclick="deleteUser('${doc.id}')" class="text-red-500 hover:underline">削除</button>
+                        </td>
+                    `;
+                    list.appendChild(tr);
+                });
+            } catch(e) { console.error(e); }
+        }
+
+        async function deleteUser(uid) {
+             if(!confirm("管理者を削除しますか？")) return;
+             await db.collection('users').doc(uid).delete();
+             loadTenantAdmins();
         }
     </script>
 </body>
