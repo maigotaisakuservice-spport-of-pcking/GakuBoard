@@ -65,11 +65,8 @@ service cloud.firestore {
 
       // Active Boards Subcollection
       match /active_boards/{boardId} {
-          allow read: if isAuthenticated(); // Class members ideally, but authenticated is fine for listing
-          allow write: if isAuthenticated(); // Teacher creates/deletes. Rules are tricky with "isTeacher" helper doing get().
-          // Simplified: Allow write if authenticated for now, or check classId in path matches user's classId.
-          // But user doc check costs money/latency.
-          // Let's trust Auth + Logic for prototype.
+          allow read: if isAuthenticated();
+          allow write: if isAuthenticated();
       }
     }
 
@@ -77,9 +74,16 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isAuthenticated() && (
         request.auth.uid == userId ||
-        resource.data.tenantId == getUserData().tenantId
+        resource.data.tenantId == getUserData().tenantId ||
+        hasRole('super_admin')
       );
-      allow create: if isAuthenticated() && request.auth.uid == userId;
+      // Allow creation if self (signup) OR if admin (direct creation)
+      allow create: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        hasRole('super_admin') ||
+        hasRole('tenant_admin') ||
+        hasRole('school_admin')
+      );
       allow write: if isAuthenticated() && (request.auth.uid == userId || hasRole('super_admin') || hasRole('tenant_admin') || hasRole('school_admin'));
     }
 
@@ -110,6 +114,8 @@ service cloud.firestore {
         resource.data.studentId == request.auth.uid ||
         (hasRole('teacher') && getUserData().classId == resource.data.classId)
       );
+      // Allow deletion by admins (for cascade delete)
+      allow delete: if hasRole('super_admin') || hasRole('tenant_admin') || hasRole('school_admin');
     }
 
     // Portal Links

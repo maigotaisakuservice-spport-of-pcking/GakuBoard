@@ -10,6 +10,7 @@
     <script src="js/firebase-config.js"></script>
     <script src="js/firebase-init.js"></script>
     <script src="js/auth.js"></script>
+    <script src="js/admin-utils.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <nav class="bg-green-700 text-white p-4 flex justify-between items-center">
@@ -22,54 +23,83 @@
             <h2 class="text-xl font-bold text-gray-800">読み込み中...</h2>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Classes Section -->
-            <div class="bg-white p-6 rounded shadow">
-                <h3 class="text-lg font-bold mb-4">クラス管理</h3>
-                <div class="flex gap-2 mb-4">
-                    <input type="text" id="new-class-name" placeholder="クラス名 (例: 1年A組)" class="border p-2 rounded flex-grow">
-                    <button onclick="createClass()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">作成</button>
-                </div>
-                <ul id="class-list" class="divide-y divide-gray-200 h-64 overflow-y-auto">
-                    <!-- Classes -->
-                </ul>
+        <!-- Class Management -->
+        <div class="bg-white p-6 rounded shadow mb-8">
+            <h3 class="text-lg font-bold mb-4">クラス管理</h3>
+            <div class="flex gap-2 mb-4">
+                <input type="text" id="new-class-name" placeholder="クラス名 (例: 1年A組)" class="border p-2 rounded flex-grow">
+                <button onclick="createClass()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">作成</button>
             </div>
+            <ul id="class-list" class="divide-y divide-gray-200 h-64 overflow-y-auto">
+                <!-- Classes -->
+            </ul>
+        </div>
 
-            <!-- User Invitation Section -->
-            <div class="bg-white p-6 rounded shadow">
-                <h3 class="text-lg font-bold mb-4">ユーザー招待 (先生・生徒)</h3>
-                <div class="flex flex-col gap-4">
-                    <div class="flex gap-2">
-                        <input type="text" id="target-name" placeholder="名前 (例: 山田 太郎)" class="border p-2 rounded w-1/3">
-                        <input type="email" id="target-email" placeholder="メールアドレス" class="border p-2 rounded flex-grow">
-                    </div>
-                    <div class="flex gap-2">
-                        <select id="target-role" class="border p-2 rounded">
+        <!-- Create User Direct Section -->
+        <div class="bg-white p-6 rounded shadow mb-8">
+            <h3 class="text-lg font-bold mb-4">ユーザー作成 (先生・生徒)</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">名前</label>
+                    <input type="text" id="user-name" placeholder="山田 太郎" class="w-full border p-2 rounded">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">メールアドレス</label>
+                    <input type="email" id="user-email" placeholder="student@example.com" class="w-full border p-2 rounded">
+                </div>
+
+                <div class="flex gap-4">
+                    <div class="w-1/2">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">ロール</label>
+                        <select id="user-role" class="w-full border p-2 rounded">
                             <option value="student">生徒</option>
                             <option value="teacher">先生</option>
                         </select>
-                        <select id="assign-class-select" class="border p-2 rounded flex-grow">
-                            <option value="">クラスを選択 (所属なし)</option>
-                        </select>
-                        <button onclick="inviteUser()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">招待送信</button>
                     </div>
-                    <p class="text-xs text-gray-500">※ メールアドレスをホワイトリストに登録します。ユーザーがログインすると所属が確定します。</p>
+                    <div class="w-1/2">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">クラス所属</label>
+                        <select id="user-class" class="w-full border p-2 rounded">
+                            <option value="">所属なし</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">パスワード</label>
+                    <input type="text" id="user-password" placeholder="パスワード" class="w-full border p-2 rounded">
+                    <label class="inline-flex items-center mt-1">
+                        <input type="checkbox" id="auto-generate-pass" class="form-checkbox h-4 w-4 text-blue-600" onchange="togglePasswordGen()">
+                        <span class="ml-2 text-gray-600 text-sm">自動生成</span>
+                    </label>
+                </div>
+
+                <div class="col-span-1 md:col-span-2 flex items-end">
+                    <button onclick="createUserDirectly()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 w-full">ユーザー作成</button>
                 </div>
             </div>
         </div>
 
-        <!-- Users List -->
+        <!-- Users List (Filtered by Class) -->
         <div class="bg-white p-6 rounded shadow mt-8">
-            <h3 class="text-lg font-bold mb-4">所属ユーザー一覧</h3>
-            <button onclick="loadUsers()" class="text-blue-500 underline text-sm mb-2">更新</button>
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">所属ユーザー一覧</h3>
+                <div class="flex gap-2">
+                    <select id="filter-class" class="border p-2 rounded text-sm" onchange="loadUsers()">
+                        <option value="">全クラス</option>
+                    </select>
+                    <button onclick="loadUsers()" class="text-blue-500 underline text-sm">更新</button>
+                </div>
+            </div>
+
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                     <thead>
                         <tr class="bg-gray-100">
-                            <th class="p-2">名前/Email</th>
-                            <th class="p-2">ロール</th>
-                            <th class="p-2">クラスID</th>
-                            <th class="p-2">操作</th>
+                            <th class="p-2 text-left">名前</th>
+                            <th class="p-2 text-left">Email</th>
+                            <th class="p-2 text-left">ロール</th>
+                            <th class="p-2 text-left">クラス</th>
+                            <th class="p-2 text-left">操作</th>
                         </tr>
                     </thead>
                     <tbody id="users-list"></tbody>
@@ -103,6 +133,16 @@
             }
         });
 
+        function togglePasswordGen() {
+            const checkbox = document.getElementById('auto-generate-pass');
+            const input = document.getElementById('user-password');
+            if(checkbox.checked) {
+                input.value = generatePassword();
+            } else {
+                input.value = '';
+            }
+        }
+
         async function loadSchoolInfo() {
             const doc = await db.collection('schools').doc(currentSchoolId).get();
             if (doc.exists) {
@@ -112,34 +152,45 @@
 
         async function loadClasses() {
             const list = document.getElementById('class-list');
-            const select = document.getElementById('assign-class-select');
+            const select = document.getElementById('user-class');
+            const filterSelect = document.getElementById('filter-class');
+
             list.innerHTML = '';
-            select.innerHTML = '<option value="">クラスを選択 (所属なし)</option>';
+            // Reset selects but keep first option
+            select.innerHTML = '<option value="">所属なし</option>';
+            filterSelect.innerHTML = '<option value="">全クラス</option>';
 
             const snap = await db.collection('classes').where('schoolId', '==', currentSchoolId).get();
+            const classes = []; // Store for mapping ID to Name later
+
             snap.forEach(doc => {
                 const data = doc.data();
+                classes.push({ id: doc.id, name: data.name });
+
+                // List Item
                 const li = document.createElement('li');
                 li.className = 'py-2 flex justify-between items-center';
                 li.innerHTML = `
                     <div>
                         <span>${data.name}</span> <span class="text-gray-400 text-xs ml-2">${doc.id}</span>
                     </div>
-                    <button onclick="deleteClass('${doc.id}')" class="text-red-500 text-xs border border-red-500 px-2 py-1 rounded hover:bg-red-50">削除</button>
+                    <button onclick="deleteClassFull('${doc.id}')" class="text-red-500 text-xs border border-red-500 px-2 py-1 rounded hover:bg-red-50">削除 (全データ)</button>
                 `;
                 list.appendChild(li);
 
+                // Select Option
                 const opt = document.createElement('option');
                 opt.value = doc.id;
                 opt.textContent = data.name;
                 select.appendChild(opt);
-            });
-        }
 
-        async function deleteClass(id) {
-            if(!confirm("クラスを削除しますか？(所属ユーザーはそのままになります)")) return;
-            await db.collection('classes').doc(id).delete();
-            loadClasses();
+                // Filter Option
+                const filterOpt = document.createElement('option');
+                filterOpt.value = doc.id;
+                filterOpt.textContent = data.name;
+                filterSelect.appendChild(filterOpt);
+            });
+            window.classListCache = classes; // Cache for user list display
         }
 
         async function createClass() {
@@ -161,66 +212,111 @@
             }
         }
 
-        async function inviteUser() {
-            const name = document.getElementById('target-name').value;
-            const email = document.getElementById('target-email').value;
-            const role = document.getElementById('target-role').value;
-            const classId = document.getElementById('assign-class-select').value;
+        async function deleteClassFull(id) {
+            if(!confirm("警告: クラスを削除すると、所属する生徒全員とその記録データが削除されます。\n\n本当に削除しますか？")) return;
+            try {
+                await deleteClassAndData(db, id);
+                loadClasses();
+                loadUsers(); // Users might be gone
+                alert("クラスと関連データを削除しました。");
+            } catch(e) {
+                console.error(e);
+                alert("削除エラー: " + e.message);
+            }
+        }
 
-            if (!email || !name) return alert('名前とメールアドレスを入力してください');
+        async function createUserDirectly() {
+            const name = document.getElementById('user-name').value;
+            const email = document.getElementById('user-email').value;
+            const role = document.getElementById('user-role').value;
+            const classId = document.getElementById('user-class').value;
+            const pass = document.getElementById('user-password').value;
+
+            if (!name || !email || !pass) return alert('必須項目を入力してください');
+
+            const additionalData = {
+                schoolId: currentSchoolId,
+                tenantId: currentTenantId,
+                name: name // Store name in doc as well
+            };
+            if (classId) additionalData.classId = classId;
 
             try {
-                const inviteData = {
-                    email: email,
-                    role: role,
-                    name: name,
-                    schoolId: currentSchoolId,
-                    tenantId: currentTenantId,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                };
-                if (classId) {
-                    inviteData.classId = classId;
-                }
+                await createAccountDirectly(db, email, pass, name, role, additionalData);
+                alert(`ユーザーを作成しました。\nEmail: ${email}\nPass: ${pass}`);
 
-                await db.collection('whitelist').add(inviteData);
-                alert('招待しました。ユーザーがログインすると所属が確定します。');
-                document.getElementById('target-email').value = '';
-                document.getElementById('target-name').value = '';
+                // Reset
+                document.getElementById('user-name').value = '';
+                document.getElementById('user-email').value = '';
+                document.getElementById('user-password').value = '';
+                document.getElementById('auto-generate-pass').checked = false;
+
+                loadUsers();
+
             } catch (e) {
                 console.error(e);
-                alert('招待失敗: ' + e.message);
+                alert('作成失敗: ' + e.message);
             }
         }
 
         async function loadUsers() {
             const tbody = document.getElementById('users-list');
-            tbody.innerHTML = '';
+            const filterClassId = document.getElementById('filter-class').value;
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4">読み込み中...</td></tr>';
 
             try {
-                const snap = await db.collection('users').where('schoolId', '==', currentSchoolId).limit(20).get();
+                let query = db.collection('users').where('schoolId', '==', currentSchoolId);
+
+                if (filterClassId) {
+                    query = query.where('classId', '==', filterClassId);
+                }
+
+                const snap = await query.limit(50).get();
+
+                tbody.innerHTML = '';
+                if (snap.empty) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">ユーザーがいません</td></tr>';
+                    return;
+                }
+
                 snap.forEach(doc => {
                     const data = doc.data();
+
+                    // Resolve Class Name
+                    let className = '-';
+                    if (data.classId && window.classListCache) {
+                        const cls = window.classListCache.find(c => c.id === data.classId);
+                        if (cls) className = cls.name;
+                    }
+
                     const tr = document.createElement('tr');
+                    tr.className = "border-b hover:bg-gray-50";
                     tr.innerHTML = `
-                        <td class="p-2 border font-mono text-xs">${data.name || data.email}</td>
-                        <td class="p-2 border">${data.role}</td>
-                        <td class="p-2 border">${data.classId || '-'}</td>
-                        <td class="p-2 border">
-                            <button onclick="deleteUser('${doc.id}')" class="text-red-500 text-xs hover:underline">削除</button>
+                        <td class="p-2">${data.name || '-'}</td>
+                        <td class="p-2 font-mono text-xs">${data.email}</td>
+                        <td class="p-2 text-xs uppercase bg-gray-100 rounded inline-block mt-2 mx-1">${data.role}</td>
+                        <td class="p-2 text-sm">${className}</td>
+                        <td class="p-2">
+                            <button onclick="deleteUserFull('${doc.id}')" class="text-red-500 text-xs border border-red-500 px-2 py-1 rounded hover:bg-red-50">削除</button>
                         </td>
                     `;
                     tbody.appendChild(tr);
                 });
             } catch (e) {
                 console.error("User list load error:", e);
-                tbody.innerHTML = '<tr><td colspan="4">読み込みエラー (インデックス未作成の可能性があります)</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="text-red-500 p-4">読み込みエラー (インデックス未作成の可能性があります)</td></tr>';
             }
         }
 
-        async function deleteUser(uid) {
-            if(!confirm("ユーザーを削除しますか？")) return;
-            await db.collection('users').doc(uid).delete();
-            loadUsers();
+        async function deleteUserFull(uid) {
+            if(!confirm("ユーザーと、そのユーザーの記録データを完全に削除しますか？")) return;
+            try {
+                await deleteUserAndData(db, uid);
+                loadUsers();
+            } catch(e) {
+                console.error(e);
+                alert("削除失敗: " + e.message);
+            }
         }
     </script>
 </body>

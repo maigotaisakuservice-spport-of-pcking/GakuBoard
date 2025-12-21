@@ -10,6 +10,7 @@
     <script src="js/firebase-config.js"></script>
     <script src="js/firebase-init.js"></script>
     <script src="js/auth.js"></script>
+    <script src="js/admin-utils.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <nav class="bg-indigo-800 text-white p-4 flex justify-between items-center">
@@ -22,17 +23,60 @@
             <h2 class="text-xl font-bold text-gray-800">読み込み中...</h2>
         </div>
 
-        <!-- Add School -->
+        <!-- Create School Section -->
         <div class="bg-white p-6 rounded shadow mb-8">
-            <h3 class="text-lg font-bold mb-4">新しい学校を追加</h3>
-            <div class="flex gap-4">
-                <input type="text" id="new-school-name" placeholder="学校名 (例: 渋谷小学校)" class="border p-2 rounded flex-grow">
-                <button onclick="createSchool()" class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700">作成</button>
+            <h2 class="text-2xl font-bold mb-4">新規学校作成</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">学校名</label>
+                    <input type="text" id="new-school-name" placeholder="例: 渋谷小学校" class="w-full border p-2 rounded">
+                </div>
+
+                <div class="col-span-2 border-t pt-4 mt-2">
+                    <h3 class="text-lg font-bold mb-2">学校管理者作成 (同時作成)</h3>
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">管理者名</label>
+                    <input type="text" id="admin-name" placeholder="校長 先生" class="w-full border p-2 rounded">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">メールアドレス</label>
+                    <input type="email" id="admin-email" placeholder="principal@example.com" class="w-full border p-2 rounded">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">パスワード</label>
+                    <input type="text" id="admin-password" placeholder="パスワード" class="w-full border p-2 rounded">
+                    <label class="inline-flex items-center mt-1">
+                        <input type="checkbox" id="auto-generate-pass" class="form-checkbox h-4 w-4 text-blue-600" onchange="togglePasswordGen()">
+                        <span class="ml-2 text-gray-600 text-sm">自動生成</span>
+                    </label>
+                </div>
+                <div class="flex items-end">
+                    <button onclick="createSchoolWithAdmin()" class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 w-full">学校作成＆管理者登録</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add School Admin Direct Section -->
+        <div class="bg-white p-6 rounded shadow mb-8">
+            <h2 class="text-2xl font-bold mb-4">既存学校への管理者追加</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <select id="school-select" class="border p-2 rounded">
+                    <option value="">学校を選択</option>
+                </select>
+                <input type="text" id="direct-admin-name" placeholder="名前" class="border p-2 rounded">
+                <input type="email" id="direct-admin-email" placeholder="メールアドレス" class="border p-2 rounded">
+                <div class="flex gap-2">
+                    <input type="text" id="direct-admin-password" placeholder="パスワード" class="border p-2 rounded flex-grow">
+                    <button onclick="document.getElementById('direct-admin-password').value = generatePassword()" class="bg-gray-200 px-2 rounded text-sm">生成</button>
+                </div>
+                <button onclick="addSchoolAdminDirectly()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">管理者作成</button>
             </div>
         </div>
 
         <!-- Schools List -->
-        <div class="bg-white p-6 rounded shadow">
+        <div class="bg-white p-6 rounded shadow mb-8">
             <h3 class="text-lg font-bold mb-4">学校一覧 & 設定</h3>
             <div class="overflow-x-auto">
                 <table class="min-w-full leading-normal">
@@ -52,14 +96,17 @@
         </div>
 
         <!-- School Admins List -->
-        <div class="bg-white p-6 rounded shadow mt-8">
+        <div class="bg-white p-6 rounded shadow">
             <h3 class="text-lg font-bold mb-4">学校管理者一覧</h3>
-            <button onclick="loadSchoolAdmins()" class="text-blue-500 underline text-sm mb-2">更新</button>
+            <div class="flex justify-end mb-2">
+                <button onclick="loadSchoolAdmins()" class="text-blue-500 underline text-sm">更新</button>
+            </div>
             <div class="overflow-x-auto">
                 <table class="min-w-full leading-normal">
                     <thead>
                         <tr>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">名前/Email</th>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">名前</th>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
                             <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">学校ID</th>
                             <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">操作</th>
                         </tr>
@@ -92,6 +139,16 @@
             }
         });
 
+        function togglePasswordGen() {
+            const checkbox = document.getElementById('auto-generate-pass');
+            const input = document.getElementById('admin-password');
+            if(checkbox.checked) {
+                input.value = generatePassword();
+            } else {
+                input.value = '';
+            }
+        }
+
         async function loadTenantInfo() {
             const doc = await db.collection('tenants').doc(currentTenantId).get();
             if (doc.exists) {
@@ -101,13 +158,16 @@
 
         async function loadSchools() {
             const list = document.getElementById('school-list');
+            const select = document.getElementById('school-select');
             list.innerHTML = '';
+            select.innerHTML = '<option value="">学校を選択</option>';
 
             const snap = await db.collection('schools').where('tenantId', '==', currentTenantId).get();
             snap.forEach(doc => {
                 const data = doc.data();
-                const tr = document.createElement('tr');
 
+                // Populate List
+                const tr = document.createElement('tr');
                 const isDailyRecordEnabled = data.features && data.features.dailyRecord === true;
                 const statusText = isDailyRecordEnabled ? '<span class="text-green-600 font-bold">有効</span>' : '<span class="text-gray-400">無効</span>';
                 const toggleBtnText = isDailyRecordEnabled ? '無効にする' : '有効にする';
@@ -125,37 +185,82 @@
                     </td>
                     <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm flex gap-2">
                         <button onclick="toggleDailyRecord('${doc.id}', ${!isDailyRecordEnabled})" class="${toggleBtnColor} text-white px-3 py-1 rounded text-xs hover:opacity-80">${toggleBtnText}</button>
-                        <button onclick="inviteSchoolAdmin('${doc.id}')" class="bg-blue-500 text-white px-3 py-1 rounded text-xs hover:bg-blue-600">管理者招待</button>
-                        <button onclick="deleteSchool('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded text-xs hover:bg-red-600">削除</button>
+                        <button onclick="deleteSchoolFull('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded text-xs hover:bg-red-600">削除 (全データ)</button>
                     </td>
                 `;
                 list.appendChild(tr);
+
+                // Populate Select
+                const opt = document.createElement('option');
+                opt.value = doc.id;
+                opt.textContent = data.name;
+                select.appendChild(opt);
             });
         }
 
-        async function createSchool() {
-            const name = document.getElementById('new-school-name').value;
-            if (!name) return;
+        async function createSchoolWithAdmin() {
+            const schoolName = document.getElementById('new-school-name').value;
+            const adminName = document.getElementById('admin-name').value;
+            const adminEmail = document.getElementById('admin-email').value;
+            const adminPass = document.getElementById('admin-password').value;
+
+            if (!schoolName || !adminName || !adminEmail || !adminPass) {
+                return alert('全ての項目を入力してください');
+            }
+
+            if(!confirm(`学校: ${schoolName}\n管理者: ${adminEmail}\n\n作成しますか？`)) return;
 
             try {
-                await db.collection('schools').add({
-                    name: name,
+                // 1. Create School Doc
+                const schoolRef = await db.collection('schools').add({
+                    name: schoolName,
                     tenantId: currentTenantId,
                     features: { dailyRecord: true },
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
+
+                // 2. Create Admin User Directly
+                await createAccountDirectly(
+                    db,
+                    adminEmail,
+                    adminPass,
+                    adminName,
+                    'school_admin',
+                    {
+                        tenantId: currentTenantId,
+                        schoolId: schoolRef.id
+                    }
+                );
+
+                alert(`学校と管理者を作成しました。\nEmail: ${adminEmail}\nPass: ${adminPass}`);
+
                 document.getElementById('new-school-name').value = '';
+                document.getElementById('admin-name').value = '';
+                document.getElementById('admin-email').value = '';
+                document.getElementById('admin-password').value = '';
+                document.getElementById('auto-generate-pass').checked = false;
+
                 loadSchools();
+                loadSchoolAdmins();
+
             } catch (e) {
                 console.error(e);
-                alert('作成失敗');
+                alert('作成失敗: ' + e.message);
             }
         }
 
-        async function deleteSchool(id) {
-            if(!confirm("学校を削除しますか？")) return;
-            await db.collection('schools').doc(id).delete();
-            loadSchools();
+        async function deleteSchoolFull(id) {
+            if(!confirm("警告: 学校を削除すると、紐づくクラス、ユーザー（生徒・先生）、記録など全てのデータが削除されます。\n\n本当に削除しますか？")) return;
+
+            try {
+                await deleteSchoolAndData(db, id);
+                alert("学校と関連データを全て削除しました。");
+                loadSchools();
+                loadSchoolAdmins();
+            } catch (e) {
+                console.error(e);
+                alert("削除中にエラーが発生しました: " + e.message);
+            }
         }
 
         async function toggleDailyRecord(schoolId, newState) {
@@ -170,53 +275,82 @@
             }
         }
 
-        async function inviteSchoolAdmin(schoolId) {
-            const email = prompt("学校管理者にするユーザーのメールアドレスを入力してください:");
-            if (!email) return;
+        async function addSchoolAdminDirectly() {
+            const schoolId = document.getElementById('school-select').value;
+            const name = document.getElementById('direct-admin-name').value;
+            const email = document.getElementById('direct-admin-email').value;
+            const pass = document.getElementById('direct-admin-password').value;
+
+            if (!schoolId || !name || !email || !pass) return alert('全ての項目を入力してください');
 
             try {
-                await db.collection('whitelist').add({
-                    email: email,
-                    role: 'school_admin',
-                    tenantId: currentTenantId,
-                    schoolId: schoolId,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                alert('招待しました。ユーザーがログインすると有効になります。');
+                await createAccountDirectly(
+                    db,
+                    email,
+                    pass,
+                    name,
+                    'school_admin',
+                    {
+                        tenantId: currentTenantId,
+                        schoolId: schoolId
+                    }
+                );
+                alert(`管理者を追加しました。\nEmail: ${email}\nPass: ${pass}`);
+                document.getElementById('direct-admin-name').value = '';
+                document.getElementById('direct-admin-email').value = '';
+                document.getElementById('direct-admin-password').value = '';
+                loadSchoolAdmins();
             } catch (e) {
-                alert('招待失敗: ' + e.message);
+                console.error(e);
+                alert('追加失敗: ' + e.message);
             }
         }
 
         async function loadSchoolAdmins() {
             const list = document.getElementById('admin-list');
-            list.innerHTML = '';
+            list.innerHTML = '<tr><td colspan="4" class="p-4 text-center">読み込み中...</td></tr>';
 
             try {
                 const snap = await db.collection('users')
                     .where('role', '==', 'school_admin')
                     .where('tenantId', '==', currentTenantId)
+                    .orderBy('createdAt', 'desc')
+                    .limit(50)
                     .get();
+
+                list.innerHTML = '';
+                if(snap.empty) {
+                    list.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-500">管理者がいません</td></tr>';
+                    return;
+                }
 
                 snap.forEach(doc => {
                     const data = doc.data();
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">${data.name || data.email}</td>
-                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">${data.schoolId}</td>
+                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">${data.name || '-'}</td>
+                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm font-mono">${data.email}</td>
+                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm text-gray-500 text-xs font-mono">${data.schoolId}</td>
                         <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                             <button onclick="deleteUser('${doc.id}')" class="text-red-500 hover:underline">削除</button>
+                             <button onclick="deleteUserFull('${doc.id}')" class="text-red-500 hover:underline">削除</button>
                         </td>
                     `;
                     list.appendChild(tr);
                 });
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(e);
+                list.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-500">読み込みエラー (インデックス作成待ちの可能性あり)</td></tr>';
+            }
         }
 
-        async function deleteUser(uid) {
-             if(!confirm("管理者を削除しますか？")) return;
-             await db.collection('users').doc(uid).delete();
-             loadSchoolAdmins();
+        async function deleteUserFull(uid) {
+             if(!confirm("この管理者を削除しますか？")) return;
+             try {
+                 await deleteUserAndData(db, uid);
+                 loadSchoolAdmins();
+             } catch(e) {
+                 alert("削除失敗: " + e.message);
+             }
         }
     </script>
 </body>

@@ -10,6 +10,7 @@
     <script src="js/firebase-config.js"></script>
     <script src="js/firebase-init.js"></script>
     <script src="js/auth.js"></script> <!-- For logout -->
+    <script src="js/admin-utils.js"></script> <!-- Admin Utils -->
 </head>
 <body class="bg-gray-100 min-h-screen">
     <nav class="bg-blue-800 text-white p-4 flex justify-between items-center">
@@ -20,23 +21,53 @@
     <div class="container mx-auto p-8">
         <!-- Create Tenant Section -->
         <div class="bg-white p-6 rounded shadow mb-8">
-            <h2 class="text-2xl font-bold mb-4">新規テナント作成 (教育委員会など)</h2>
-            <div class="flex gap-4">
-                <input type="text" id="new-tenant-name" placeholder="テナント名 (例: 東京都教育委員会)" class="border p-2 rounded flex-grow">
-                <button onclick="createTenant()" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700">作成</button>
+            <h2 class="text-2xl font-bold mb-4">新規テナント作成</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">テナント名</label>
+                    <input type="text" id="new-tenant-name" placeholder="例: 東京都教育委員会" class="w-full border p-2 rounded">
+                </div>
+
+                <div class="col-span-2 border-t pt-4 mt-2">
+                    <h3 class="text-lg font-bold mb-2">テナント管理者作成 (同時作成)</h3>
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">管理者名</label>
+                    <input type="text" id="admin-name" placeholder="管理者 太郎" class="w-full border p-2 rounded">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">メールアドレス</label>
+                    <input type="email" id="admin-email" placeholder="admin@example.com" class="w-full border p-2 rounded">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">パスワード</label>
+                    <input type="text" id="admin-password" placeholder="パスワード" class="w-full border p-2 rounded">
+                    <label class="inline-flex items-center mt-1">
+                        <input type="checkbox" id="auto-generate-pass" class="form-checkbox h-4 w-4 text-blue-600" onchange="togglePasswordGen()">
+                        <span class="ml-2 text-gray-600 text-sm">自動生成</span>
+                    </label>
+                </div>
+                <div class="flex items-end">
+                    <button onclick="createTenantWithAdmin()" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 w-full">テナント作成＆管理者登録</button>
+                </div>
             </div>
         </div>
 
-        <!-- Create Tenant Admin Section -->
+        <!-- Create Tenant Admin Direct Section -->
         <div class="bg-white p-6 rounded shadow mb-8">
-            <h2 class="text-2xl font-bold mb-4">テナント管理者招待</h2>
-            <p class="text-sm text-gray-500 mb-4">メールアドレスを指定して、テナント管理者を招待します。</p>
+            <h2 class="text-2xl font-bold mb-4">既存テナントへの管理者追加</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <select id="tenant-select" class="border p-2 rounded">
                     <option value="">テナントを選択</option>
                 </select>
-                <input type="email" id="target-email" placeholder="メールアドレス (例: admin@example.com)" class="border p-2 rounded">
-                <button onclick="inviteTenantAdmin()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">招待する</button>
+                <input type="text" id="direct-admin-name" placeholder="名前" class="border p-2 rounded">
+                <input type="email" id="direct-admin-email" placeholder="メールアドレス" class="border p-2 rounded">
+                <div class="flex gap-2">
+                    <input type="text" id="direct-admin-password" placeholder="パスワード" class="border p-2 rounded flex-grow">
+                    <button onclick="document.getElementById('direct-admin-password').value = generatePassword()" class="bg-gray-200 px-2 rounded text-sm">生成</button>
+                </div>
+                <button onclick="addTenantAdminDirectly()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">管理者作成</button>
             </div>
         </div>
 
@@ -51,12 +82,15 @@
         <!-- Tenant Admins List -->
         <div class="bg-white p-6 rounded shadow">
             <h2 class="text-2xl font-bold mb-4">テナント管理者一覧</h2>
-            <button onclick="loadTenantAdmins()" class="text-blue-500 underline text-sm mb-2">更新</button>
+            <div class="flex justify-end mb-2">
+                <button onclick="loadTenantAdmins()" class="text-blue-500 underline text-sm">更新</button>
+            </div>
             <div class="overflow-x-auto">
                 <table class="min-w-full leading-normal">
                     <thead>
                         <tr>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">名前/Email</th>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">名前</th>
+                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
                             <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">テナントID</th>
                             <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">操作</th>
                         </tr>
@@ -85,6 +119,18 @@
             }
         });
 
+        function togglePasswordGen() {
+            const checkbox = document.getElementById('auto-generate-pass');
+            const input = document.getElementById('admin-password');
+            if(checkbox.checked) {
+                input.value = generatePassword();
+                // input.disabled = true; // Optional: disable edit
+            } else {
+                input.value = '';
+                // input.disabled = false;
+            }
+        }
+
         async function loadTenants() {
             const list = document.getElementById('tenant-list');
             const select = document.getElementById('tenant-select');
@@ -101,7 +147,7 @@
                         <p class="font-bold text-lg">${data.name}</p>
                         <p class="text-sm text-gray-500">ID: ${doc.id}</p>
                     </div>
-                    <button onclick="deleteTenant('${doc.id}')" class="text-red-500 border border-red-500 px-3 py-1 rounded text-sm hover:bg-red-50">削除</button>
+                    <button onclick="deleteTenantFull('${doc.id}')" class="text-red-500 border border-red-500 px-3 py-1 rounded text-sm hover:bg-red-50">削除 (全データ)</button>
                 `;
                 list.appendChild(li);
 
@@ -112,77 +158,135 @@
             });
         }
 
-        async function createTenant() {
-            const name = document.getElementById('new-tenant-name').value;
-            if (!name) return alert('テナント名を入力してください');
+        async function createTenantWithAdmin() {
+            const tenantName = document.getElementById('new-tenant-name').value;
+            const adminName = document.getElementById('admin-name').value;
+            const adminEmail = document.getElementById('admin-email').value;
+            const adminPass = document.getElementById('admin-password').value;
+
+            if (!tenantName || !adminName || !adminEmail || !adminPass) {
+                return alert('全ての項目を入力してください');
+            }
+
+            if(!confirm(`テナント: ${tenantName}\n管理者: ${adminEmail}\n\n作成しますか？`)) return;
 
             try {
-                await db.collection('tenants').add({
-                    name: name,
+                // 1. Create Tenant Doc
+                const tenantRef = await db.collection('tenants').add({
+                    name: tenantName,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                alert('テナントを作成しました');
+
+                // 2. Create Admin User Directly
+                await createAccountDirectly(
+                    db,
+                    adminEmail,
+                    adminPass,
+                    adminName,
+                    'tenant_admin',
+                    { tenantId: tenantRef.id }
+                );
+
+                alert(`テナントと管理者を作成しました。\nEmail: ${adminEmail}\nPass: ${adminPass}`);
+
+                // Reset form
                 document.getElementById('new-tenant-name').value = '';
+                document.getElementById('admin-name').value = '';
+                document.getElementById('admin-email').value = '';
+                document.getElementById('admin-password').value = '';
+                document.getElementById('auto-generate-pass').checked = false;
+
                 loadTenants();
+                loadTenantAdmins();
+
             } catch (e) {
                 console.error(e);
                 alert('作成失敗: ' + e.message);
             }
         }
 
-        async function deleteTenant(id) {
-            if(!confirm("テナントを削除しますか？(所属データはそのままになります)")) return;
-            await db.collection('tenants').doc(id).delete();
-            loadTenants();
-        }
-
-        async function inviteTenantAdmin() {
-            const tenantId = document.getElementById('tenant-select').value;
-            const email = document.getElementById('target-email').value;
-
-            if (!tenantId || !email) return alert('テナントとメールアドレスを入力してください');
+        async function deleteTenantFull(id) {
+            if(!confirm("警告: テナントを削除すると、紐づく学校、クラス、ユーザー、記録など全てのデータが削除されます。\n\n本当に削除しますか？")) return;
 
             try {
-                await db.collection('whitelist').add({
-                    email: email,
-                    role: 'tenant_admin',
-                    tenantId: tenantId,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-
-                alert('招待を作成しました。ユーザーがログインするとアカウントが有効になります。');
-                document.getElementById('target-email').value = '';
+                await deleteTenantAndData(db, id);
+                alert("テナントと関連データを全て削除しました。");
+                loadTenants();
+                loadTenantAdmins();
             } catch (e) {
                 console.error(e);
-                alert('設定失敗: ' + e.message);
+                alert("削除中にエラーが発生しました: " + e.message);
+            }
+        }
+
+        async function addTenantAdminDirectly() {
+            const tenantId = document.getElementById('tenant-select').value;
+            const name = document.getElementById('direct-admin-name').value;
+            const email = document.getElementById('direct-admin-email').value;
+            const pass = document.getElementById('direct-admin-password').value;
+
+            if (!tenantId || !name || !email || !pass) return alert('全ての項目を入力してください');
+
+            try {
+                await createAccountDirectly(
+                    db,
+                    email,
+                    pass,
+                    name,
+                    'tenant_admin',
+                    { tenantId: tenantId }
+                );
+                alert(`管理者を追加しました。\nEmail: ${email}\nPass: ${pass}`);
+                document.getElementById('direct-admin-name').value = '';
+                document.getElementById('direct-admin-email').value = '';
+                document.getElementById('direct-admin-password').value = '';
+                loadTenantAdmins();
+            } catch (e) {
+                console.error(e);
+                alert('追加失敗: ' + e.message);
             }
         }
 
         async function loadTenantAdmins() {
             const list = document.getElementById('admin-list');
-            list.innerHTML = '';
+            list.innerHTML = '<tr><td colspan="4" class="p-4 text-center">読み込み中...</td></tr>';
 
             try {
-                const snap = await db.collection('users').where('role', '==', 'tenant_admin').limit(50).get();
+                const snap = await db.collection('users').where('role', '==', 'tenant_admin').orderBy('createdAt', 'desc').limit(50).get();
+
+                list.innerHTML = '';
+                if(snap.empty) {
+                    list.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-500">管理者がいません</td></tr>';
+                    return;
+                }
+
                 snap.forEach(doc => {
                     const data = doc.data();
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">${data.name || data.email}</td>
-                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">${data.tenantId}</td>
+                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">${data.name || '-'}</td>
+                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm font-mono">${data.email}</td>
+                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm text-gray-500 font-mono text-xs">${data.tenantId}</td>
                         <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                             <button onclick="deleteUser('${doc.id}')" class="text-red-500 hover:underline">削除</button>
+                             <button onclick="deleteUserFull('${doc.id}')" class="text-red-500 hover:underline">削除</button>
                         </td>
                     `;
                     list.appendChild(tr);
                 });
-            } catch(e) { console.error(e); }
+            } catch(e) {
+                console.error(e);
+                list.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-500">読み込みエラー (インデックス作成待ちの可能性あり)</td></tr>';
+            }
         }
 
-        async function deleteUser(uid) {
-             if(!confirm("管理者を削除しますか？")) return;
-             await db.collection('users').doc(uid).delete();
-             loadTenantAdmins();
+        async function deleteUserFull(uid) {
+             if(!confirm("この管理者を削除しますか？(アカウント無効化・データ削除)")) return;
+             try {
+                await deleteUserAndData(db, uid);
+                loadTenantAdmins();
+             } catch(e) {
+                 alert("削除失敗: " + e.message);
+             }
         }
     </script>
 </body>
