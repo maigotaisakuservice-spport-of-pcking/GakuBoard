@@ -114,7 +114,12 @@
 
             <!-- PORTAL MANAGEMENT Section -->
             <section id="section-portal" class="hidden space-y-6">
-                <h2 class="text-2xl font-bold text-gray-800">学習ポータル管理</h2>
+                <div class="flex justify-between items-center">
+                    <h2 class="text-2xl font-bold text-gray-800">学習ポータル管理 (クラス用)</h2>
+                    <button onclick="openClassStudentPreview()" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 flex items-center gap-2">
+                        <span>👁️</span> 生徒プレビュー
+                    </button>
+                </div>
 
                 <div class="bg-white p-6 rounded shadow">
                     <h3 class="font-bold mb-4">新規リンク追加</h3>
@@ -147,6 +152,33 @@
         </div>
     </main>
 
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="fixed inset-0 bg-gray-900 bg-opacity-90 hidden flex items-center justify-center z-50">
+        <div class="bg-white w-full h-full md:w-11/12 md:h-5/6 rounded shadow-lg flex flex-col relative">
+            <div class="bg-gray-800 text-white p-3 flex justify-between items-center rounded-t">
+                <span class="font-bold">生徒画面プレビューモード (操作は無効化されています)</span>
+                <button onclick="closeStudentPreview()" class="text-gray-300 hover:text-white text-xl">&times;</button>
+            </div>
+            <iframe id="preview-frame" class="flex-grow w-full border-0 bg-gray-100"></iframe>
+        </div>
+    </div>
+
     <script src="js/teacher-dashboard.js"></script>
+    <script>
+        // Preview logic for Teacher
+        function openClassStudentPreview() {
+            if(!currentClassId) return alert("クラスが選択されていません");
+            const modal = document.getElementById('preview-modal');
+            const frame = document.getElementById('preview-frame');
+            // Pass classId to mock specific class view
+            frame.src = `student-dashboard.html?preview=true&classId=${currentClassId}`;
+            modal.classList.remove('hidden');
+        }
+
+        function closeStudentPreview() {
+            document.getElementById('preview-modal').classList.add('hidden');
+            document.getElementById('preview-frame').src = '';
+        }
+    </script>
 </body>
 </html>

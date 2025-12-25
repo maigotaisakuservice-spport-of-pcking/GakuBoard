@@ -69,7 +69,32 @@ service cloud.firestore {
       // Active Boards Subcollection
       match /active_boards/{boardId} {
           allow read: if isAuthenticated();
-          allow write: if isAuthenticated();
+
+          allow create: if isTeacher(classId)
+                        || isSchoolAdmin(get(/databases/$(database)/documents/classes/$(classId)).data.schoolId)
+                        || hasRole('tenant_admin')
+                        || hasRole('super_admin');
+
+          allow delete: if isTeacher(classId)
+                        || isSchoolAdmin(get(/databases/$(database)/documents/classes/$(classId)).data.schoolId)
+                        || hasRole('tenant_admin')
+                        || hasRole('super_admin');
+
+          allow update: if
+            // Teacher/Admin can do anything
+            (
+               isTeacher(classId)
+               || isSchoolAdmin(get(/databases/$(database)/documents/classes/$(classId)).data.schoolId)
+               || hasRole('tenant_admin')
+               || hasRole('super_admin')
+            )
+            ||
+            // Student can only update studentCount
+            (
+              isClassMember(classId) &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentCount']) &&
+              request.resource.data.studentCount is int
+            );
       }
     }
 
@@ -143,43 +168,5 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
-    // --- NEW: Integrations (School Settings for Google/Teams) ---
-    match /integrations/{schoolId} {
-      allow read: if isAuthenticated() && isSchoolMember(schoolId); // Students/Teachers can read (e.g. to see if sync is on?) or mainly admins.
-      // School Admin writes, Tenant Admin writes (maybe)
-      allow write: if isSchoolAdmin(schoolId) || isTenantAdmin(get(/databases/$(database)/documents/schools/$(schoolId)).data.tenantId);
-    }
-
-    // --- NEW: MEXCBT Tests (Master Data) ---
-    match /mexcbt_tests/{testId} {
-      allow read: if isAuthenticated(); // Everyone can read available tests
-      allow write: if isSuperAdmin() || hasRole('tenant_admin'); // Tenants create tests?
-    }
-
-    // --- NEW: MEXCBT Assignments (Distribution) ---
-    match /mexcbt_assignments/{assignId} {
-      allow read: if isAuthenticated() && (
-        resource.data.targetType == 'tenant' && getUserData().tenantId == resource.data.targetId ||
-        resource.data.targetType == 'school' && getUserData().schoolId == resource.data.targetId ||
-        resource.data.targetType == 'class' && isClassMember(resource.data.targetId) ||
-        resource.data.targetType == 'student' && resource.data.targetId == request.auth.uid
-      );
-      allow write: if hasRole('tenant_admin') || hasRole('school_admin');
-    }
-
-    // --- NEW: MEXCBT Results (Student Answers) ---
-    match /mexcbt_results/{resultId} {
-      allow read: if isAuthenticated() && (
-        resource.data.studentId == request.auth.uid ||
-        (hasRole('teacher') && isClassMember(resource.data.classId)) ||
-        (hasRole('school_admin') && isSchoolMember(resource.data.schoolId)) ||
-        (hasRole('tenant_admin') && isTenantMember(resource.data.tenantId))
-      );
-      allow create: if isAuthenticated() && request.resource.data.studentId == request.auth.uid;
-      allow update: if isAuthenticated() && (
-        resource.data.studentId == request.auth.uid || // Reflection
-        hasRole('teacher') // Grading?
-      );
-    }
   }
 }

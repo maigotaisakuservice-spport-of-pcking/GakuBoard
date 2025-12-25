@@ -5,57 +5,116 @@ let currentAffiliations = []; // Array of { classId, yearType, attendanceNumber 
 let primaryClassId = null; // The main class for daily records
 let selectedMood = null;
 
-auth.onAuthStateChanged(async user => {
-    if (user) {
-        currentUser = user;
-        const doc = await db.collection('users').doc(user.uid).get();
-        if (doc.exists) {
-            const data = doc.data();
-            if (data.role !== 'student') {
-                alert('生徒用アカウントではありません');
-                window.location.href = 'login.html';
-                return;
-            }
+// NEW: Preview Mode Detection
+const urlParams = new URLSearchParams(window.location.search);
+const isPreview = urlParams.get('preview') === 'true';
+const previewClassId = urlParams.get('classId');
+const previewSchoolId = urlParams.get('schoolId');
 
-            // 1. Check Profile Completion (Tell me about yourself)
-            if (typeof checkAndShowProfileSetup === 'function') {
-                await checkAndShowProfileSetup(user, db);
-            }
+if (isPreview) {
+    // PREVIEW MODE: Mock User & Bypass Auth
+    console.log("Starting in PREVIEW mode");
+    currentUser = { uid: 'preview_user', email: 'preview@student.com' };
 
-            // 2. Set User Data
-            document.getElementById('student-name').textContent = data.name || user.email;
+    // Determine affiliations for preview
+    // If classId is provided (Teacher Preview), use that.
+    // If schoolId is provided (School Admin Preview), mock a generic student in that school.
+    const mockData = {
+        name: 'プレビュー生徒',
+        role: 'student',
+        schoolId: previewSchoolId || 'mock_school',
+        affiliations: []
+    };
 
-            // 3. Resolve Affiliations
-            await resolveAffiliations(data);
-
-            // 4. Load Features
-            checkDailySubmission();
-            loadUnifiedPortal();
-            loadUnifiedAnnouncements();
-            loadUnifiedActivities();
-        }
+    if (previewClassId) {
+        mockData.affiliations.push({ classId: previewClassId, yearType: 'current' });
     } else {
-        window.location.href = 'login.html';
+        // School Admin Preview: Need to fetch a real class? Or just show school-wide stuff.
+        // We set no specific class affiliations unless we fetch them, but for School Portal preview,
+        // we mainly need `schoolId`.
+        // To show "Unified Portal" correctly, we need at least one class if we filter by classId too.
+        // Let's assume we just want to see School Wide links for now.
     }
-});
+
+    initDashboard(mockData);
+
+} else {
+    // NORMAL MODE
+    auth.onAuthStateChanged(async user => {
+        if (user) {
+            currentUser = user;
+            const doc = await db.collection('users').doc(user.uid).get();
+            if (doc.exists) {
+                const data = doc.data();
+                if (data.role !== 'student') {
+                    alert('生徒用アカウントではありません');
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                // Profile Setup Check
+                if (typeof checkAndShowProfileSetup === 'function') {
+                    await checkAndShowProfileSetup(user, db);
+                }
+
+                initDashboard(data);
+            }
+        } else {
+            window.location.href = 'login.html';
+        }
+    });
+}
+
+async function initDashboard(userData) {
+    // 2. Set User Data
+    document.getElementById('student-name').textContent = (userData.name || currentUser.email) + (isPreview ? " (プレビュー)" : "");
+
+    // 3. Resolve Affiliations
+    if (isPreview && previewClassId) {
+        // Mock resolve for preview
+        currentAffiliations = [{ classId: previewClassId, yearType: 'current' }];
+        primaryClassId = previewClassId;
+    } else if (isPreview && previewSchoolId) {
+        // School Admin Preview
+        currentAffiliations = [];
+        primaryClassId = null;
+    } else {
+        await resolveAffiliations(userData);
+    }
+
+    // 4. Load Features
+    if(!isPreview) checkDailySubmission();
+
+    // For School Admin Preview, we pass `schoolId` explicitly to loader if affiliations empty?
+    // Modified loader to handle school-wide links even without affiliations if schoolId present.
+    loadUnifiedPortal(userData.schoolId);
+
+    loadUnifiedAnnouncements();
+    loadUnifiedActivities();
+
+    if (isPreview) {
+        // Disable interactive elements
+        document.querySelectorAll('button, input, select').forEach(el => {
+            // Keep tabs or basic nav working if any, but disable submission
+            if(el.id === 'daily-class-select') return; // allow switching context if mocked?
+            if(el.onclick) el.onclick = (e) => { e.preventDefault(); alert("プレビューモードでは操作できません"); };
+            // el.disabled = true; // Visual clutter if disabled style applied everywhere
+        });
+    }
+}
 
 async function resolveAffiliations(userData) {
     currentAffiliations = [];
 
-    // A. New array format
     if (userData.affiliations && Array.isArray(userData.affiliations)) {
         currentAffiliations = userData.affiliations;
-    }
-    // B. Legacy single ID
-    else if (userData.classId) {
+    } else if (userData.classId) {
         currentAffiliations.push({ classId: userData.classId, yearType: 'current' });
     }
 
-    // Determine "Primary" class for Daily Record defaults
     const primary = currentAffiliations.find(a => a.yearType === 'current');
     primaryClassId = primary ? primary.classId : (currentAffiliations[0]?.classId || null);
 
-    // If multiple classes, populate Daily Record selector
     const selectorContainer = document.getElementById('daily-class-selector-container');
     const selector = document.getElementById('daily-class-select');
 
@@ -117,6 +176,8 @@ async function checkDailySubmission() {
 }
 
 async function submitDaily() {
+    if(isPreview) return alert("プレビューモードです");
+
     if (!selectedMood) return alert("気分を選んでね！");
     const temp = document.getElementById('temp').value;
     if (!temp) return alert("体温を入れてね！");
@@ -154,30 +215,58 @@ async function submitDaily() {
 
 // --- UNIFIED VIEW LOGIC ---
 
-async function loadUnifiedPortal() {
+async function loadUnifiedPortal(explicitSchoolId = null) {
     const grid = document.getElementById('portal-grid');
     grid.innerHTML = '';
 
+    // 1. School-wide Links
+    // If explicitSchoolId passed (Preview) or derived from affiliations (Normal)
+    // Actually, student doc has 'schoolId'.
+    let schoolId = explicitSchoolId;
+    if (!schoolId && !isPreview) {
+        // Fetch from user doc again? Or pass in.
+        // Let's assume user belongs to one school for simplicity in this prototype.
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        schoolId = userDoc.data().schoolId;
+    }
+
+    if (schoolId) {
+        const schoolSnap = await db.collection('portal_links')
+            .where('schoolId', '==', schoolId)
+            .where('isSchoolWide', '==', true)
+            .get();
+
+        schoolSnap.forEach(doc => renderPortalLink(doc.data(), grid));
+    }
+
+    // 2. Class-specific Links
     const classIds = currentAffiliations.map(a => a.classId);
-    if (classIds.length === 0) return;
+    if (classIds.length > 0) {
+        const classSnap = await db.collection('portal_links')
+            .where('classId', 'in', classIds)
+            .get();
 
-    const snap = await db.collection('portal_links')
-        .where('classId', 'in', classIds)
-        .get();
+        classSnap.forEach(doc => renderPortalLink(doc.data(), grid));
+    }
+}
 
-    snap.forEach(doc => {
-        const d = doc.data();
-        const a = document.createElement('a');
-        a.href = d.url;
-        a.target = "_blank";
-        a.className = "bg-white p-4 rounded-xl shadow flex flex-col items-center hover:bg-gray-50 transition";
-        const icon = d.iconUrl || 'https://via.placeholder.com/64?text=App';
-        a.innerHTML = `
-            <img src="${icon}" class="w-12 h-12 mb-2 rounded object-cover">
-            <span class="text-xs font-bold text-center leading-tight">${d.title}</span>
-        `;
-        grid.appendChild(a);
-    });
+function renderPortalLink(d, container) {
+    const a = document.createElement('a');
+    a.href = isPreview ? '#' : d.url;
+    a.target = isPreview ? '' : "_blank";
+    a.className = "bg-white p-4 rounded-xl shadow flex flex-col items-center hover:bg-gray-50 transition relative";
+
+    // Add badge if school wide?
+    const badge = d.isSchoolWide ? '<span class="absolute top-1 right-1 text-xs bg-purple-100 text-purple-800 px-1 rounded">全校</span>' : '';
+
+    const icon = d.iconUrl || 'https://via.placeholder.com/64?text=App';
+    a.innerHTML = `
+        ${badge}
+        <img src="${icon}" class="w-12 h-12 mb-2 rounded object-cover">
+        <span class="text-xs font-bold text-center leading-tight">${d.title}</span>
+    `;
+    if(isPreview) a.onclick = (e) => { e.preventDefault(); alert(`[プレビュー] ${d.title} に遷移します`); };
+    container.appendChild(a);
 }
 
 async function loadUnifiedAnnouncements() {
@@ -308,6 +397,8 @@ async function renderWhiteboards() {
 }
 
 function joinActivity(type, boardId, classId) {
+    if(isPreview) return alert("プレビューモードです");
+
     if (!classId && currentClassId) classId = currentClassId; // Fallback
     if (!classId) return;
 
