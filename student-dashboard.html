@@ -11,7 +11,6 @@
     <script src="js/firebase-init.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/profile-setup.js"></script>
-    <script src="js/mexcbt-service.js"></script> <!-- MEXCBT Service -->
     <style>
         .mood-btn.selected { transform: scale(1.2); border-color: #3B82F6; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
     </style>
@@ -73,27 +72,6 @@
             <div id="daily-done" class="hidden text-center py-4">
                 <p class="text-2xl mb-2">✅ 送信しました</p>
                 <p class="text-gray-500">今日も一日がんばろう！</p>
-            </div>
-        </section>
-
-        <!-- MEXCBT / Manabi Log Section -->
-        <section class="bg-white p-6 rounded-xl shadow border-t-4 border-indigo-500">
-            <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                <span>📚</span> MEXCBT / まなびログ
-            </h2>
-
-            <div class="mb-6">
-                <h3 class="font-bold text-gray-700 mb-2 border-b pb-1">新着テスト (未受験)</h3>
-                <div id="mexcbt-assignments-list" class="space-y-3">
-                    <p class="text-gray-500 text-sm">現在配信されているテストはありません</p>
-                </div>
-            </div>
-
-            <div>
-                <h3 class="font-bold text-gray-700 mb-2 border-b pb-1">受験履歴 (振り返り)</h3>
-                <div id="mexcbt-results-list" class="space-y-3">
-                    <p class="text-gray-500 text-sm">履歴はありません</p>
-                </div>
             </div>
         </section>
 

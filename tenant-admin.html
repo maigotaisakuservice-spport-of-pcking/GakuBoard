@@ -11,24 +11,21 @@
     <script src="js/firebase-init.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/admin-utils.js"></script>
-    <script src="js/mexcbt-service.js"></script> <!-- New Service -->
 </head>
 <body class="bg-gray-100 min-h-screen">
     <nav class="bg-indigo-800 text-white p-4 flex justify-between items-center">
-        <h1 class="text-xl font-bold">テナント管理 (学校・MEXCBT)</h1>
+        <h1 class="text-xl font-bold">テナント管理 (学校管理)</h1>
         <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded">ログアウト</button>
     </nav>
 
     <div class="container mx-auto p-8">
 
-        <!-- Tabs -->
+        <!-- Tabs (Removed MEXCBT/Settings) -->
         <div class="flex border-b border-gray-300 mb-6">
             <button onclick="switchTab('school')" id="tab-school" class="px-6 py-2 bg-white border-t border-l border-r rounded-t text-indigo-700 font-bold">学校管理</button>
-            <button onclick="switchTab('mexcbt')" id="tab-mexcbt" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">MEXCBT配信</button>
-            <button onclick="switchTab('settings')" id="tab-settings" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">システム設定</button>
         </div>
 
-        <!-- TAB: SCHOOL MANAGEMENT (Existing) -->
+        <!-- TAB: SCHOOL MANAGEMENT -->
         <div id="content-school">
             <div id="tenant-info" class="mb-8 p-4 bg-white rounded shadow">
                 <h2 class="text-xl font-bold text-gray-800">読み込み中...</h2>
@@ -78,7 +75,7 @@
                             <tr>
                                 <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">学校名</th>
                                 <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
-                                <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">機能設定</th>
+                                <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">毎日の記録機能</th>
                                 <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">操作</th>
                             </tr>
                         </thead>
@@ -88,83 +85,14 @@
             </div>
         </div>
 
-        <!-- TAB: MEXCBT BROADCAST -->
-        <div id="content-mexcbt" class="hidden">
-             <div class="bg-white p-6 rounded shadow mb-8">
-                <h2 class="text-2xl font-bold mb-4">MEXCBTテスト 一斉配信</h2>
-                <p class="mb-4 text-gray-600">登録されている学校に対してテストを一斉配信します。</p>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <h3 class="font-bold mb-2">1. テストを選択</h3>
-                        <select id="broadcast-test-select" class="w-full border p-2 rounded mb-4">
-                            <!-- Populated by JS -->
-                        </select>
-                        <div class="bg-gray-50 p-3 rounded text-sm text-gray-500" id="test-preview">
-                            テストを選択してください
-                        </div>
-                    </div>
-                    <div>
-                        <h3 class="font-bold mb-2">2. 配信先の学校</h3>
-                        <div id="broadcast-school-list" class="border p-2 rounded h-48 overflow-y-auto bg-white">
-                            <!-- Checkboxes -->
-                        </div>
-                        <div class="mt-2 text-right">
-                             <button onclick="broadcastTest()" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 font-bold">配信を実行</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white p-6 rounded shadow">
-                <h3 class="font-bold mb-4">配信履歴</h3>
-                <div id="broadcast-history" class="space-y-2"></div>
-            </div>
-        </div>
-
-        <!-- TAB: SYSTEM SETTINGS -->
-        <div id="content-settings" class="hidden">
-             <div class="bg-white p-6 rounded shadow">
-                <h2 class="text-2xl font-bold mb-4">システム利用機能設定</h2>
-                <p class="mb-6 text-gray-600">テナント全体または学校ごとの機能利用可否を設定します（デフォルト: 無効）。</p>
-
-                <table class="min-w-full leading-normal">
-                    <thead>
-                        <tr class="bg-gray-100">
-                            <th class="px-4 py-2 text-left">学校名</th>
-                            <th class="px-4 py-2 text-center">Google連携</th>
-                            <th class="px-4 py-2 text-center">Teams連携</th>
-                            <th class="px-4 py-2 text-center">MEXCBT</th>
-                        </tr>
-                    </thead>
-                    <tbody id="settings-school-list">
-                        <!-- Settings Rows -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
     </div>
 
     <script>
         let currentTenantId = null;
-        let schoolCache = [];
 
-        // Tab Switching
+        // Tab Switching (Simplified)
         function switchTab(tabId) {
-            ['school', 'mexcbt', 'settings'].forEach(t => {
-                document.getElementById(`content-${t}`).classList.add('hidden');
-                const btn = document.getElementById(`tab-${t}`);
-                btn.classList.remove('bg-white', 'text-indigo-700', 'font-bold', 'border-t', 'border-l', 'border-r', 'rounded-t');
-                btn.classList.add('bg-gray-200', 'text-gray-600');
-            });
-            document.getElementById(`content-${tabId}`).classList.remove('hidden');
-            const activeBtn = document.getElementById(`tab-${tabId}`);
-            activeBtn.classList.remove('bg-gray-200', 'text-gray-600');
-            activeBtn.classList.add('bg-white', 'text-indigo-700', 'font-bold', 'border-t', 'border-l', 'border-r', 'rounded-t');
-
-            if(tabId === 'mexcbt') loadBroadcastUI();
-            if(tabId === 'settings') loadSettingsUI();
+            // Only school tab remains
         }
 
         auth.onAuthStateChanged(async user => {
@@ -185,7 +113,6 @@
             }
         });
 
-        // --- Existing Functions ---
         function togglePasswordGen() {
             const checkbox = document.getElementById('auto-generate-pass');
             const input = document.getElementById('admin-password');
@@ -205,26 +132,30 @@
 
         async function loadSchools() {
             const list = document.getElementById('school-list');
-            schoolCache = [];
             list.innerHTML = '';
 
             const snap = await db.collection('schools').where('tenantId', '==', currentTenantId).get();
             snap.forEach(doc => {
                 const data = doc.data();
-                schoolCache.push({ id: doc.id, ...data });
-
                 const tr = document.createElement('tr');
-                // Features
-                const f = data.features || {};
-                const drStatus = f.dailyRecord ? '健' : '-';
+
+                const isDailyRecordEnabled = data.features && data.features.dailyRecord === true;
+                const statusText = isDailyRecordEnabled ? '<span class="text-green-600 font-bold">有効</span>' : '<span class="text-gray-400">無効</span>';
+                const toggleBtnText = isDailyRecordEnabled ? '無効にする' : '有効にする';
+                const toggleBtnColor = isDailyRecordEnabled ? 'bg-gray-500' : 'bg-green-500';
 
                 tr.innerHTML = `
-                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm font-bold">${data.name}</td>
-                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm text-gray-500">${doc.id}</td>
                     <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                        <span class="bg-gray-100 px-2 py-1 rounded text-xs">日:${drStatus}</span>
+                        <p class="text-gray-900 whitespace-no-wrap">${data.name}</p>
+                    </td>
+                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
+                        <p class="text-gray-600 whitespace-no-wrap">${doc.id}</p>
+                    </td>
+                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
+                        ${statusText}
                     </td>
                     <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm flex gap-2">
+                        <button onclick="toggleDailyRecord('${doc.id}', ${!isDailyRecordEnabled})" class="${toggleBtnColor} text-white px-3 py-1 rounded text-xs hover:opacity-80">${toggleBtnText}</button>
                         <button onclick="deleteSchoolFull('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded text-xs hover:bg-red-600">削除</button>
                     </td>
                 `;
@@ -241,10 +172,11 @@
             if (!schoolName || !adminName || !adminEmail || !adminPass) return alert('全ての項目を入力してください');
 
             try {
+                // Simplified features (removed google/teams/mexcbt)
                 const schoolRef = await db.collection('schools').add({
                     name: schoolName,
                     tenantId: currentTenantId,
-                    features: { dailyRecord: true, googleSync: false, teamsSync: false, mexcbt: false },
+                    features: { dailyRecord: true },
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
 
@@ -266,104 +198,17 @@
             loadSchools();
         }
 
-        // --- MEXCBT Broadcast UI ---
-        function loadBroadcastUI() {
-            const select = document.getElementById('broadcast-test-select');
-            select.innerHTML = '<option value="">テストを選択してください</option>';
-
-            // Use mock data
-            MEXCBTService.availableTests.forEach(t => {
-                const opt = document.createElement('option');
-                opt.value = t.id;
-                opt.textContent = `${t.title} (${t.subject})`;
-                select.appendChild(opt);
-            });
-
-            const schoolList = document.getElementById('broadcast-school-list');
-            schoolList.innerHTML = '';
-            schoolCache.forEach(s => {
-                const div = document.createElement('div');
-                div.className = "flex items-center mb-1";
-                div.innerHTML = `<input type="checkbox" value="${s.id}" class="school-cb mr-2"> <span>${s.name}</span>`;
-                schoolList.appendChild(div);
-            });
-
-            select.onchange = () => {
-                const t = MEXCBTService.availableTests.find(x => x.id === select.value);
-                document.getElementById('test-preview').textContent = t ?
-                    `${t.title} / 学年:${t.grade} / 問題数:${t.questions.length}` : 'テストを選択してください';
-            };
-
-            loadBroadcastHistory();
-        }
-
-        async function broadcastTest() {
-            const testId = document.getElementById('broadcast-test-select').value;
-            if (!testId) return alert("テストを選択してください");
-
-            const checkboxes = document.querySelectorAll('.school-cb:checked');
-            if (checkboxes.length === 0) return alert("配信先の学校を選択してください");
-
-            const schoolIds = Array.from(checkboxes).map(cb => cb.value);
-
-            if(!confirm(`${schoolIds.length}校にテストを一斉配信しますか？`)) return;
-
+        async function toggleDailyRecord(schoolId, newState) {
             try {
-                await MEXCBTService.broadcastToSchools(currentTenantId, testId, schoolIds);
-                alert("配信しました");
-                loadBroadcastHistory();
-            } catch(e) {
-                alert("配信失敗: " + e.message);
+                await db.collection('schools').doc(schoolId).update({
+                    'features.dailyRecord': newState
+                });
+                loadSchools();
+            } catch (e) {
+                console.error(e);
+                alert('更新失敗');
             }
         }
-
-        async function loadBroadcastHistory() {
-            // In reality, query mexcbt_assignments where tenantId == currentTenantId
-             const histDiv = document.getElementById('broadcast-history');
-             // Mock display since we just did it
-             histDiv.innerHTML = '<p class="text-sm text-gray-500">直近の履歴のみ表示します...</p>';
-        }
-
-        // --- System Settings UI ---
-        function loadSettingsUI() {
-            const tbody = document.getElementById('settings-school-list');
-            tbody.innerHTML = '';
-
-            schoolCache.forEach(s => {
-                const tr = document.createElement('tr');
-                tr.className = "border-b";
-
-                const f = s.features || {};
-
-                const mkCheck = (key, label) => `
-                    <label class="inline-flex items-center cursor-pointer">
-                        <input type="checkbox" class="form-checkbox h-5 w-5 text-indigo-600"
-                            ${f[key] ? 'checked' : ''}
-                            onchange="updateSchoolFeature('${s.id}', '${key}', this.checked)">
-                    </label>
-                `;
-
-                tr.innerHTML = `
-                    <td class="px-4 py-3">${s.name}</td>
-                    <td class="px-4 py-3 text-center">${mkCheck('googleSync', 'Google')}</td>
-                    <td class="px-4 py-3 text-center">${mkCheck('teamsSync', 'Teams')}</td>
-                    <td class="px-4 py-3 text-center">${mkCheck('mexcbt', 'MEXCBT')}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-
-        async function updateSchoolFeature(schoolId, key, val) {
-            const update = {};
-            update[`features.${key}`] = val;
-            await db.collection('schools').doc(schoolId).update(update);
-
-            // update cache
-            const sc = schoolCache.find(s => s.id === schoolId);
-            if(!sc.features) sc.features = {};
-            sc.features[key] = val;
-        }
-
     </script>
 </body>
 </html>

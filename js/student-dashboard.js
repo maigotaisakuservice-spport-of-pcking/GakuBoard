@@ -33,7 +33,6 @@ auth.onAuthStateChanged(async user => {
             loadUnifiedPortal();
             loadUnifiedAnnouncements();
             loadUnifiedActivities();
-            loadMexcbtData(); // New: Load Assignments and Results
         }
     } else {
         window.location.href = 'login.html';
@@ -317,107 +316,4 @@ function joinActivity(type, boardId, classId) {
     } else if (type === 'whiteboard') {
         window.location.href = `whiteboard.html?classId=${classId}&boardId=${boardId}&mode=student`;
     }
-}
-
-// --- MEXCBT Logic ---
-async function loadMexcbtData() {
-    // 1. Assignments
-    // Logic: Fetch assignments for my classes or me.
-    // Simplifying assumption: Student belongs to one main school. Assignments are often by class.
-    // We check: targetType='student' (me), 'class' (my classes), 'school' (my school)
-
-    const userDoc = await db.collection('users').doc(currentUser.uid).get();
-    const schoolId = userDoc.data().schoolId;
-    const classIds = currentAffiliations.map(a => a.classId);
-
-    // We run 3 parallel queries (or sequential)
-    const p1 = db.collection('mexcbt_assignments').where('targetType', '==', 'student').where('targetId', '==', currentUser.uid).get();
-    const p2 = db.collection('mexcbt_assignments').where('targetType', '==', 'school').where('targetId', '==', schoolId).get();
-    const p3_promises = classIds.map(cid =>
-        db.collection('mexcbt_assignments').where('targetType', '==', 'class').where('targetId', '==', cid).get()
-    );
-
-    const [snap1, snap2, ...snaps3] = await Promise.all([p1, p2, ...p3_promises]);
-
-    let assignments = [];
-    const pushAssign = (doc) => assignments.push({ id: doc.id, ...doc.data() });
-
-    snap1.forEach(pushAssign);
-    snap2.forEach(pushAssign);
-    snaps3.forEach(snap => snap.forEach(pushAssign));
-
-    // De-duplicate assignments (unlikely but possible if targeted multiple ways)
-    assignments = assignments.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
-
-    // Filter out "already taken"
-    // Fetch my results
-    const resSnap = await db.collection('mexcbt_results').where('studentId', '==', currentUser.uid).get();
-    const takenTestIds = new Set();
-    resSnap.forEach(doc => takenTestIds.add(doc.data().testId));
-
-    const availableAssignments = assignments.filter(a => !takenTestIds.has(a.testId));
-
-    renderAssignments(availableAssignments);
-    renderResults(resSnap);
-}
-
-function renderAssignments(list) {
-    const container = document.getElementById('mexcbt-assignments-list');
-    container.innerHTML = '';
-
-    if(list.length === 0) {
-        container.innerHTML = '<p class="text-gray-500 text-sm">現在配信されているテストはありません</p>';
-        return;
-    }
-
-    list.forEach(async assign => {
-        // Need Test Title (from availableTests or DB)
-        // Optimization: Fetch unique testIds once? For now simple loop.
-        let test = await MEXCBTService.getTestContent(assign.testId);
-        if(!test) test = { title: '不明なテスト' };
-
-        const div = document.createElement('div');
-        div.className = "flex justify-between items-center bg-gray-50 p-3 rounded border";
-        div.innerHTML = `
-            <div>
-                <p class="font-bold text-gray-800">${test.title}</p>
-                <p class="text-xs text-gray-500">配信: ${assign.distributedAt ? assign.distributedAt.toDate().toLocaleDateString() : ''}</p>
-            </div>
-            <a href="take-test.html?testId=${assign.testId}" target="_blank" class="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-bold hover:bg-indigo-700">受験する</a>
-        `;
-        container.appendChild(div);
-    });
-}
-
-function renderResults(snap) {
-    const container = document.getElementById('mexcbt-results-list');
-    container.innerHTML = '';
-
-    if(snap.empty) {
-        container.innerHTML = '<p class="text-gray-500 text-sm">履歴はありません</p>';
-        return;
-    }
-
-    snap.forEach(async doc => {
-        const r = doc.data();
-        let test = await MEXCBTService.getTestContent(r.testId);
-        if(!test) test = { title: '不明なテスト' };
-
-        const div = document.createElement('div');
-        div.className = "bg-white p-3 rounded border hover:bg-gray-50 cursor-pointer";
-        // On click, show detail modal? Or just summary.
-        // For now, simple list.
-        const date = r.completedAt ? r.completedAt.toDate().toLocaleDateString() : '';
-        const reflection = r.reflection ? `<p class="text-xs text-gray-600 mt-1 bg-yellow-50 p-1 rounded">📝 ${r.reflection}</p>` : '';
-
-        div.innerHTML = `
-            <div class="flex justify-between">
-                <span class="font-bold text-indigo-700">${test.title}</span>
-                <span class="font-bold">${r.score}/${r.totalQuestions}点</span>
-            </div>
-            <p class="text-xs text-gray-400">${date}</p>
-            ${reflection}
-        `;
-        container.appendChild(div);
-    });
 }
