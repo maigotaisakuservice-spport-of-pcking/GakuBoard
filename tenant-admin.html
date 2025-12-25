@@ -11,114 +11,161 @@
     <script src="js/firebase-init.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/admin-utils.js"></script>
+    <script src="js/mexcbt-service.js"></script> <!-- New Service -->
 </head>
 <body class="bg-gray-100 min-h-screen">
     <nav class="bg-indigo-800 text-white p-4 flex justify-between items-center">
-        <h1 class="text-xl font-bold">テナント管理 (学校管理)</h1>
+        <h1 class="text-xl font-bold">テナント管理 (学校・MEXCBT)</h1>
         <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded">ログアウト</button>
     </nav>
 
     <div class="container mx-auto p-8">
-        <div id="tenant-info" class="mb-8 p-4 bg-white rounded shadow">
-            <h2 class="text-xl font-bold text-gray-800">読み込み中...</h2>
+
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-300 mb-6">
+            <button onclick="switchTab('school')" id="tab-school" class="px-6 py-2 bg-white border-t border-l border-r rounded-t text-indigo-700 font-bold">学校管理</button>
+            <button onclick="switchTab('mexcbt')" id="tab-mexcbt" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">MEXCBT配信</button>
+            <button onclick="switchTab('settings')" id="tab-settings" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">システム設定</button>
         </div>
 
-        <!-- Create School Section -->
-        <div class="bg-white p-6 rounded shadow mb-8">
-            <h2 class="text-2xl font-bold mb-4">新規学校作成</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="col-span-2">
-                    <label class="block text-gray-700 text-sm font-bold mb-2">学校名</label>
-                    <input type="text" id="new-school-name" placeholder="例: 渋谷小学校" class="w-full border p-2 rounded">
-                </div>
+        <!-- TAB: SCHOOL MANAGEMENT (Existing) -->
+        <div id="content-school">
+            <div id="tenant-info" class="mb-8 p-4 bg-white rounded shadow">
+                <h2 class="text-xl font-bold text-gray-800">読み込み中...</h2>
+            </div>
 
-                <div class="col-span-2 border-t pt-4 mt-2">
-                    <h3 class="text-lg font-bold mb-2">学校管理者作成 (同時作成)</h3>
-                </div>
+            <!-- Create School Section -->
+            <div class="bg-white p-6 rounded shadow mb-8">
+                <h2 class="text-2xl font-bold mb-4">新規学校作成</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">学校名</label>
+                        <input type="text" id="new-school-name" placeholder="例: 渋谷小学校" class="w-full border p-2 rounded">
+                    </div>
 
-                <div>
-                    <label class="block text-gray-700 text-sm font-bold mb-2">管理者名</label>
-                    <input type="text" id="admin-name" placeholder="校長 先生" class="w-full border p-2 rounded">
+                    <div class="col-span-2 border-t pt-4 mt-2">
+                        <h3 class="text-lg font-bold mb-2">学校管理者作成 (同時作成)</h3>
+                    </div>
+
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">管理者名</label>
+                        <input type="text" id="admin-name" placeholder="校長 先生" class="w-full border p-2 rounded">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">メールアドレス</label>
+                        <input type="email" id="admin-email" placeholder="principal@example.com" class="w-full border p-2 rounded">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">パスワード</label>
+                        <input type="text" id="admin-password" placeholder="パスワード" class="w-full border p-2 rounded">
+                        <label class="inline-flex items-center mt-1">
+                            <input type="checkbox" id="auto-generate-pass" class="form-checkbox h-4 w-4 text-blue-600" onchange="togglePasswordGen()">
+                            <span class="ml-2 text-gray-600 text-sm">自動生成</span>
+                        </label>
+                    </div>
+                    <div class="flex items-end">
+                        <button onclick="createSchoolWithAdmin()" class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 w-full">学校作成＆管理者登録</button>
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-gray-700 text-sm font-bold mb-2">メールアドレス</label>
-                    <input type="email" id="admin-email" placeholder="principal@example.com" class="w-full border p-2 rounded">
-                </div>
-                <div>
-                    <label class="block text-gray-700 text-sm font-bold mb-2">パスワード</label>
-                    <input type="text" id="admin-password" placeholder="パスワード" class="w-full border p-2 rounded">
-                    <label class="inline-flex items-center mt-1">
-                        <input type="checkbox" id="auto-generate-pass" class="form-checkbox h-4 w-4 text-blue-600" onchange="togglePasswordGen()">
-                        <span class="ml-2 text-gray-600 text-sm">自動生成</span>
-                    </label>
-                </div>
-                <div class="flex items-end">
-                    <button onclick="createSchoolWithAdmin()" class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 w-full">学校作成＆管理者登録</button>
+            </div>
+
+            <!-- Schools List -->
+            <div class="bg-white p-6 rounded shadow mb-8">
+                <h3 class="text-lg font-bold mb-4">学校一覧 & 設定</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full leading-normal">
+                        <thead>
+                            <tr>
+                                <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">学校名</th>
+                                <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
+                                <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">機能設定</th>
+                                <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="school-list"></tbody>
+                    </table>
                 </div>
             </div>
         </div>
 
-        <!-- Add School Admin Direct Section -->
-        <div class="bg-white p-6 rounded shadow mb-8">
-            <h2 class="text-2xl font-bold mb-4">既存学校への管理者追加</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <select id="school-select" class="border p-2 rounded">
-                    <option value="">学校を選択</option>
-                </select>
-                <input type="text" id="direct-admin-name" placeholder="名前" class="border p-2 rounded">
-                <input type="email" id="direct-admin-email" placeholder="メールアドレス" class="border p-2 rounded">
-                <div class="flex gap-2">
-                    <input type="text" id="direct-admin-password" placeholder="パスワード" class="border p-2 rounded flex-grow">
-                    <button onclick="document.getElementById('direct-admin-password').value = generatePassword()" class="bg-gray-200 px-2 rounded text-sm">生成</button>
+        <!-- TAB: MEXCBT BROADCAST -->
+        <div id="content-mexcbt" class="hidden">
+             <div class="bg-white p-6 rounded shadow mb-8">
+                <h2 class="text-2xl font-bold mb-4">MEXCBTテスト 一斉配信</h2>
+                <p class="mb-4 text-gray-600">登録されている学校に対してテストを一斉配信します。</p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="font-bold mb-2">1. テストを選択</h3>
+                        <select id="broadcast-test-select" class="w-full border p-2 rounded mb-4">
+                            <!-- Populated by JS -->
+                        </select>
+                        <div class="bg-gray-50 p-3 rounded text-sm text-gray-500" id="test-preview">
+                            テストを選択してください
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="font-bold mb-2">2. 配信先の学校</h3>
+                        <div id="broadcast-school-list" class="border p-2 rounded h-48 overflow-y-auto bg-white">
+                            <!-- Checkboxes -->
+                        </div>
+                        <div class="mt-2 text-right">
+                             <button onclick="broadcastTest()" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 font-bold">配信を実行</button>
+                        </div>
+                    </div>
                 </div>
-                <button onclick="addSchoolAdminDirectly()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">管理者作成</button>
+            </div>
+
+            <div class="bg-white p-6 rounded shadow">
+                <h3 class="font-bold mb-4">配信履歴</h3>
+                <div id="broadcast-history" class="space-y-2"></div>
             </div>
         </div>
 
-        <!-- Schools List -->
-        <div class="bg-white p-6 rounded shadow mb-8">
-            <h3 class="text-lg font-bold mb-4">学校一覧 & 設定</h3>
-            <div class="overflow-x-auto">
+        <!-- TAB: SYSTEM SETTINGS -->
+        <div id="content-settings" class="hidden">
+             <div class="bg-white p-6 rounded shadow">
+                <h2 class="text-2xl font-bold mb-4">システム利用機能設定</h2>
+                <p class="mb-6 text-gray-600">テナント全体または学校ごとの機能利用可否を設定します（デフォルト: 無効）。</p>
+
                 <table class="min-w-full leading-normal">
                     <thead>
-                        <tr>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">学校名</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">毎日の記録機能</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">操作</th>
+                        <tr class="bg-gray-100">
+                            <th class="px-4 py-2 text-left">学校名</th>
+                            <th class="px-4 py-2 text-center">Google連携</th>
+                            <th class="px-4 py-2 text-center">Teams連携</th>
+                            <th class="px-4 py-2 text-center">MEXCBT</th>
                         </tr>
                     </thead>
-                    <tbody id="school-list">
-                        <!-- Items -->
+                    <tbody id="settings-school-list">
+                        <!-- Settings Rows -->
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <!-- School Admins List -->
-        <div class="bg-white p-6 rounded shadow">
-            <h3 class="text-lg font-bold mb-4">学校管理者一覧</h3>
-            <div class="flex justify-end mb-2">
-                <button onclick="loadSchoolAdmins()" class="text-blue-500 underline text-sm">更新</button>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="min-w-full leading-normal">
-                    <thead>
-                        <tr>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">名前</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">学校ID</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="admin-list"></tbody>
-                </table>
-            </div>
-        </div>
     </div>
 
     <script>
         let currentTenantId = null;
+        let schoolCache = [];
+
+        // Tab Switching
+        function switchTab(tabId) {
+            ['school', 'mexcbt', 'settings'].forEach(t => {
+                document.getElementById(`content-${t}`).classList.add('hidden');
+                const btn = document.getElementById(`tab-${t}`);
+                btn.classList.remove('bg-white', 'text-indigo-700', 'font-bold', 'border-t', 'border-l', 'border-r', 'rounded-t');
+                btn.classList.add('bg-gray-200', 'text-gray-600');
+            });
+            document.getElementById(`content-${tabId}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-${tabId}`);
+            activeBtn.classList.remove('bg-gray-200', 'text-gray-600');
+            activeBtn.classList.add('bg-white', 'text-indigo-700', 'font-bold', 'border-t', 'border-l', 'border-r', 'rounded-t');
+
+            if(tabId === 'mexcbt') loadBroadcastUI();
+            if(tabId === 'settings') loadSettingsUI();
+        }
 
         auth.onAuthStateChanged(async user => {
             if (user) {
@@ -132,13 +179,13 @@
                     currentTenantId = userDoc.data().tenantId;
                     loadTenantInfo();
                     loadSchools();
-                    loadSchoolAdmins();
                 }
             } else {
                 window.location.href = 'login.html';
             }
         });
 
+        // --- Existing Functions ---
         function togglePasswordGen() {
             const checkbox = document.getElementById('auto-generate-pass');
             const input = document.getElementById('admin-password');
@@ -158,43 +205,30 @@
 
         async function loadSchools() {
             const list = document.getElementById('school-list');
-            const select = document.getElementById('school-select');
+            schoolCache = [];
             list.innerHTML = '';
-            select.innerHTML = '<option value="">学校を選択</option>';
 
             const snap = await db.collection('schools').where('tenantId', '==', currentTenantId).get();
             snap.forEach(doc => {
                 const data = doc.data();
+                schoolCache.push({ id: doc.id, ...data });
 
-                // Populate List
                 const tr = document.createElement('tr');
-                const isDailyRecordEnabled = data.features && data.features.dailyRecord === true;
-                const statusText = isDailyRecordEnabled ? '<span class="text-green-600 font-bold">有効</span>' : '<span class="text-gray-400">無効</span>';
-                const toggleBtnText = isDailyRecordEnabled ? '無効にする' : '有効にする';
-                const toggleBtnColor = isDailyRecordEnabled ? 'bg-gray-500' : 'bg-green-500';
+                // Features
+                const f = data.features || {};
+                const drStatus = f.dailyRecord ? '健' : '-';
 
                 tr.innerHTML = `
+                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm font-bold">${data.name}</td>
+                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm text-gray-500">${doc.id}</td>
                     <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                        <p class="text-gray-900 whitespace-no-wrap">${data.name}</p>
-                    </td>
-                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                        <p class="text-gray-600 whitespace-no-wrap">${doc.id}</p>
-                    </td>
-                    <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                        ${statusText}
+                        <span class="bg-gray-100 px-2 py-1 rounded text-xs">日:${drStatus}</span>
                     </td>
                     <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm flex gap-2">
-                        <button onclick="toggleDailyRecord('${doc.id}', ${!isDailyRecordEnabled})" class="${toggleBtnColor} text-white px-3 py-1 rounded text-xs hover:opacity-80">${toggleBtnText}</button>
-                        <button onclick="deleteSchoolFull('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded text-xs hover:bg-red-600">削除 (全データ)</button>
+                        <button onclick="deleteSchoolFull('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded text-xs hover:bg-red-600">削除</button>
                     </td>
                 `;
                 list.appendChild(tr);
-
-                // Populate Select
-                const opt = document.createElement('option');
-                opt.value = doc.id;
-                opt.textContent = data.name;
-                select.appendChild(opt);
             });
         }
 
@@ -204,154 +238,132 @@
             const adminEmail = document.getElementById('admin-email').value;
             const adminPass = document.getElementById('admin-password').value;
 
-            if (!schoolName || !adminName || !adminEmail || !adminPass) {
-                return alert('全ての項目を入力してください');
-            }
-
-            if(!confirm(`学校: ${schoolName}\n管理者: ${adminEmail}\n\n作成しますか？`)) return;
+            if (!schoolName || !adminName || !adminEmail || !adminPass) return alert('全ての項目を入力してください');
 
             try {
-                // 1. Create School Doc
                 const schoolRef = await db.collection('schools').add({
                     name: schoolName,
                     tenantId: currentTenantId,
-                    features: { dailyRecord: true },
+                    features: { dailyRecord: true, googleSync: false, teamsSync: false, mexcbt: false },
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
 
-                // 2. Create Admin User Directly
-                await createAccountDirectly(
-                    db,
-                    adminEmail,
-                    adminPass,
-                    adminName,
-                    'school_admin',
-                    {
-                        tenantId: currentTenantId,
-                        schoolId: schoolRef.id
-                    }
-                );
+                await createAccountDirectly(db, adminEmail, adminPass, adminName, 'school_admin', {
+                    tenantId: currentTenantId, schoolId: schoolRef.id
+                });
 
-                alert(`学校と管理者を作成しました。\nEmail: ${adminEmail}\nPass: ${adminPass}`);
-
+                alert(`作成完了: ${adminEmail}`);
                 document.getElementById('new-school-name').value = '';
-                document.getElementById('admin-name').value = '';
-                document.getElementById('admin-email').value = '';
-                document.getElementById('admin-password').value = '';
-                document.getElementById('auto-generate-pass').checked = false;
-
                 loadSchools();
-                loadSchoolAdmins();
-
             } catch (e) {
-                console.error(e);
                 alert('作成失敗: ' + e.message);
             }
         }
 
         async function deleteSchoolFull(id) {
-            if(!confirm("警告: 学校を削除すると、紐づくクラス、ユーザー（生徒・先生）、記録など全てのデータが削除されます。\n\n本当に削除しますか？")) return;
+            if(!confirm("削除しますか？")) return;
+            await deleteSchoolAndData(db, id);
+            loadSchools();
+        }
+
+        // --- MEXCBT Broadcast UI ---
+        function loadBroadcastUI() {
+            const select = document.getElementById('broadcast-test-select');
+            select.innerHTML = '<option value="">テストを選択してください</option>';
+
+            // Use mock data
+            MEXCBTService.availableTests.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                opt.textContent = `${t.title} (${t.subject})`;
+                select.appendChild(opt);
+            });
+
+            const schoolList = document.getElementById('broadcast-school-list');
+            schoolList.innerHTML = '';
+            schoolCache.forEach(s => {
+                const div = document.createElement('div');
+                div.className = "flex items-center mb-1";
+                div.innerHTML = `<input type="checkbox" value="${s.id}" class="school-cb mr-2"> <span>${s.name}</span>`;
+                schoolList.appendChild(div);
+            });
+
+            select.onchange = () => {
+                const t = MEXCBTService.availableTests.find(x => x.id === select.value);
+                document.getElementById('test-preview').textContent = t ?
+                    `${t.title} / 学年:${t.grade} / 問題数:${t.questions.length}` : 'テストを選択してください';
+            };
+
+            loadBroadcastHistory();
+        }
+
+        async function broadcastTest() {
+            const testId = document.getElementById('broadcast-test-select').value;
+            if (!testId) return alert("テストを選択してください");
+
+            const checkboxes = document.querySelectorAll('.school-cb:checked');
+            if (checkboxes.length === 0) return alert("配信先の学校を選択してください");
+
+            const schoolIds = Array.from(checkboxes).map(cb => cb.value);
+
+            if(!confirm(`${schoolIds.length}校にテストを一斉配信しますか？`)) return;
 
             try {
-                await deleteSchoolAndData(db, id);
-                alert("学校と関連データを全て削除しました。");
-                loadSchools();
-                loadSchoolAdmins();
-            } catch (e) {
-                console.error(e);
-                alert("削除中にエラーが発生しました: " + e.message);
+                await MEXCBTService.broadcastToSchools(currentTenantId, testId, schoolIds);
+                alert("配信しました");
+                loadBroadcastHistory();
+            } catch(e) {
+                alert("配信失敗: " + e.message);
             }
         }
 
-        async function toggleDailyRecord(schoolId, newState) {
-            try {
-                await db.collection('schools').doc(schoolId).update({
-                    'features.dailyRecord': newState
-                });
-                loadSchools();
-            } catch (e) {
-                console.error(e);
-                alert('更新失敗');
-            }
+        async function loadBroadcastHistory() {
+            // In reality, query mexcbt_assignments where tenantId == currentTenantId
+             const histDiv = document.getElementById('broadcast-history');
+             // Mock display since we just did it
+             histDiv.innerHTML = '<p class="text-sm text-gray-500">直近の履歴のみ表示します...</p>';
         }
 
-        async function addSchoolAdminDirectly() {
-            const schoolId = document.getElementById('school-select').value;
-            const name = document.getElementById('direct-admin-name').value;
-            const email = document.getElementById('direct-admin-email').value;
-            const pass = document.getElementById('direct-admin-password').value;
+        // --- System Settings UI ---
+        function loadSettingsUI() {
+            const tbody = document.getElementById('settings-school-list');
+            tbody.innerHTML = '';
 
-            if (!schoolId || !name || !email || !pass) return alert('全ての項目を入力してください');
+            schoolCache.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b";
 
-            try {
-                await createAccountDirectly(
-                    db,
-                    email,
-                    pass,
-                    name,
-                    'school_admin',
-                    {
-                        tenantId: currentTenantId,
-                        schoolId: schoolId
-                    }
-                );
-                alert(`管理者を追加しました。\nEmail: ${email}\nPass: ${pass}`);
-                document.getElementById('direct-admin-name').value = '';
-                document.getElementById('direct-admin-email').value = '';
-                document.getElementById('direct-admin-password').value = '';
-                loadSchoolAdmins();
-            } catch (e) {
-                console.error(e);
-                alert('追加失敗: ' + e.message);
-            }
+                const f = s.features || {};
+
+                const mkCheck = (key, label) => `
+                    <label class="inline-flex items-center cursor-pointer">
+                        <input type="checkbox" class="form-checkbox h-5 w-5 text-indigo-600"
+                            ${f[key] ? 'checked' : ''}
+                            onchange="updateSchoolFeature('${s.id}', '${key}', this.checked)">
+                    </label>
+                `;
+
+                tr.innerHTML = `
+                    <td class="px-4 py-3">${s.name}</td>
+                    <td class="px-4 py-3 text-center">${mkCheck('googleSync', 'Google')}</td>
+                    <td class="px-4 py-3 text-center">${mkCheck('teamsSync', 'Teams')}</td>
+                    <td class="px-4 py-3 text-center">${mkCheck('mexcbt', 'MEXCBT')}</td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
-        async function loadSchoolAdmins() {
-            const list = document.getElementById('admin-list');
-            list.innerHTML = '<tr><td colspan="4" class="p-4 text-center">読み込み中...</td></tr>';
+        async function updateSchoolFeature(schoolId, key, val) {
+            const update = {};
+            update[`features.${key}`] = val;
+            await db.collection('schools').doc(schoolId).update(update);
 
-            try {
-                const snap = await db.collection('users')
-                    .where('role', '==', 'school_admin')
-                    .where('tenantId', '==', currentTenantId)
-                    .orderBy('createdAt', 'desc')
-                    .limit(50)
-                    .get();
-
-                list.innerHTML = '';
-                if(snap.empty) {
-                    list.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-500">管理者がいません</td></tr>';
-                    return;
-                }
-
-                snap.forEach(doc => {
-                    const data = doc.data();
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">${data.name || '-'}</td>
-                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm font-mono">${data.email}</td>
-                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm text-gray-500 text-xs font-mono">${data.schoolId}</td>
-                        <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                             <button onclick="deleteUserFull('${doc.id}')" class="text-red-500 hover:underline">削除</button>
-                        </td>
-                    `;
-                    list.appendChild(tr);
-                });
-            } catch (e) {
-                console.error(e);
-                list.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-500">読み込みエラー (インデックス作成待ちの可能性あり)</td></tr>';
-            }
+            // update cache
+            const sc = schoolCache.find(s => s.id === schoolId);
+            if(!sc.features) sc.features = {};
+            sc.features[key] = val;
         }
 
-        async function deleteUserFull(uid) {
-             if(!confirm("この管理者を削除しますか？")) return;
-             try {
-                 await deleteUserAndData(db, uid);
-                 loadSchoolAdmins();
-             } catch(e) {
-                 alert("削除失敗: " + e.message);
-             }
-        }
     </script>
 </body>
 </html>

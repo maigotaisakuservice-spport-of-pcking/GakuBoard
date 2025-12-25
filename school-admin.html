@@ -11,99 +11,215 @@
     <script src="js/firebase-init.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/admin-utils.js"></script>
+    <script src="js/mexcbt-service.js"></script> <!-- MEXCBT -->
+    <script src="js/integration-service.js"></script> <!-- Integration -->
 </head>
 <body class="bg-gray-100 min-h-screen">
     <nav class="bg-green-700 text-white p-4 flex justify-between items-center">
-        <h1 class="text-xl font-bold">学校管理 (クラス・ユーザー)</h1>
+        <h1 class="text-xl font-bold">学校管理 (クラス・ユーザー・連携)</h1>
         <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded">ログアウト</button>
     </nav>
 
     <div class="container mx-auto p-8">
-        <div id="school-info" class="mb-8 p-4 bg-white rounded shadow">
+
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-300 mb-6">
+            <button onclick="switchTab('manage')" id="tab-manage" class="px-6 py-2 bg-white border-t border-l border-r rounded-t text-green-700 font-bold">クラス・ユーザー管理</button>
+            <button onclick="switchTab('sync')" id="tab-sync" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">外部連携 (Sync)</button>
+            <button onclick="switchTab('mexcbt')" id="tab-mexcbt" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">MEXCBT管理</button>
+        </div>
+
+        <div id="school-info" class="mb-4 p-4 bg-white rounded shadow">
             <h2 class="text-xl font-bold text-gray-800">読み込み中...</h2>
         </div>
 
-        <!-- Class Management -->
-        <div class="bg-white p-6 rounded shadow mb-8">
-            <h3 class="text-lg font-bold mb-4">クラス管理</h3>
-            <div class="flex gap-2 mb-4">
-                <input type="text" id="new-class-name" placeholder="クラス名 (例: 1年A組)" class="border p-2 rounded flex-grow">
-                <button onclick="createClass()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">作成</button>
+        <!-- TAB: MANAGE -->
+        <div id="content-manage">
+            <!-- Class Management -->
+            <div class="bg-white p-6 rounded shadow mb-8">
+                <h3 class="text-lg font-bold mb-4">クラス管理</h3>
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="new-class-name" placeholder="クラス名 (例: 1年A組)" class="border p-2 rounded flex-grow">
+                    <button onclick="createClass()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">作成</button>
+                </div>
+                <ul id="class-list" class="divide-y divide-gray-200 h-64 overflow-y-auto">
+                    <!-- Classes -->
+                </ul>
             </div>
-            <ul id="class-list" class="divide-y divide-gray-200 h-64 overflow-y-auto">
-                <!-- Classes -->
-            </ul>
+
+            <!-- Create User Direct Section -->
+            <div class="bg-white p-6 rounded shadow mb-8">
+                <h3 class="text-lg font-bold mb-4">ユーザー作成 (先生・生徒)</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">名前</label>
+                        <input type="text" id="user-name" placeholder="山田 太郎" class="w-full border p-2 rounded">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">メールアドレス</label>
+                        <input type="email" id="user-email" placeholder="student@example.com" class="w-full border p-2 rounded">
+                    </div>
+
+                    <div class="flex gap-4">
+                        <div class="w-1/2">
+                            <label class="block text-gray-700 text-sm font-bold mb-2">ロール</label>
+                            <select id="user-role" class="w-full border p-2 rounded">
+                                <option value="student">生徒</option>
+                                <option value="teacher">先生</option>
+                            </select>
+                        </div>
+                        <div class="w-1/2">
+                            <label class="block text-gray-700 text-sm font-bold mb-2">クラス所属</label>
+                            <select id="user-class" class="w-full border p-2 rounded">
+                                <option value="">所属なし</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">パスワード</label>
+                        <input type="text" id="user-password" placeholder="パスワード" class="w-full border p-2 rounded">
+                        <label class="inline-flex items-center mt-1">
+                            <input type="checkbox" id="auto-generate-pass" class="form-checkbox h-4 w-4 text-blue-600" onchange="togglePasswordGen()">
+                            <span class="ml-2 text-gray-600 text-sm">自動生成</span>
+                        </label>
+                    </div>
+
+                    <div class="col-span-1 md:col-span-2 flex items-end">
+                        <button onclick="createUserDirectly()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 w-full">ユーザー作成</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users List (Filtered by Class) -->
+            <div class="bg-white p-6 rounded shadow mt-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold">所属ユーザー一覧</h3>
+                    <div class="flex gap-2">
+                        <select id="filter-class" class="border p-2 rounded text-sm" onchange="loadUsers()">
+                            <option value="">全クラス</option>
+                        </select>
+                        <button onclick="loadUsers()" class="text-blue-500 underline text-sm">更新</button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead>
+                            <tr class="bg-gray-100">
+                                <th class="p-2 text-left">名前</th>
+                                <th class="p-2 text-left">Email</th>
+                                <th class="p-2 text-left">ロール</th>
+                                <th class="p-2 text-left">クラス</th>
+                                <th class="p-2 text-left">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-list"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
-        <!-- Create User Direct Section -->
-        <div class="bg-white p-6 rounded shadow mb-8">
-            <h3 class="text-lg font-bold mb-4">ユーザー作成 (先生・生徒)</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-gray-700 text-sm font-bold mb-2">名前</label>
-                    <input type="text" id="user-name" placeholder="山田 太郎" class="w-full border p-2 rounded">
-                </div>
-                <div>
-                    <label class="block text-gray-700 text-sm font-bold mb-2">メールアドレス</label>
-                    <input type="email" id="user-email" placeholder="student@example.com" class="w-full border p-2 rounded">
-                </div>
+        <!-- TAB: SYNC -->
+        <div id="content-sync" class="hidden">
+            <h2 class="text-2xl font-bold mb-6 text-gray-800">外部サービス連携</h2>
 
-                <div class="flex gap-4">
-                    <div class="w-1/2">
-                        <label class="block text-gray-700 text-sm font-bold mb-2">ロール</label>
-                        <select id="user-role" class="w-full border p-2 rounded">
-                            <option value="student">生徒</option>
-                            <option value="teacher">先生</option>
-                        </select>
-                    </div>
-                    <div class="w-1/2">
-                        <label class="block text-gray-700 text-sm font-bold mb-2">クラス所属</label>
-                        <select id="user-class" class="w-full border p-2 rounded">
-                            <option value="">所属なし</option>
-                        </select>
+            <!-- Google -->
+            <div id="google-integration" class="bg-white p-6 rounded shadow mb-6 hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-lg text-gray-700 flex items-center gap-2">
+                        <span class="text-blue-500 text-xl">G</span> Google Classroom 連携
+                    </h3>
+                    <div id="google-status">
+                        <button onclick="linkService('google')" class="bg-blue-500 text-white px-4 py-2 rounded shadow hover:bg-blue-600">連携する</button>
                     </div>
                 </div>
-
-                <div>
-                    <label class="block text-gray-700 text-sm font-bold mb-2">パスワード</label>
-                    <input type="text" id="user-password" placeholder="パスワード" class="w-full border p-2 rounded">
-                    <label class="inline-flex items-center mt-1">
-                        <input type="checkbox" id="auto-generate-pass" class="form-checkbox h-4 w-4 text-blue-600" onchange="togglePasswordGen()">
-                        <span class="ml-2 text-gray-600 text-sm">自動生成</span>
-                    </label>
+                <div id="google-panel" class="hidden border-t pt-4">
+                    <p class="mb-4 text-sm text-gray-600">L-Gateのクラス・メンバー情報をGoogle Classroomに同期します。</p>
+                    <button onclick="syncService('google')" class="bg-green-600 text-white px-6 py-3 rounded shadow hover:bg-green-700 font-bold flex items-center gap-2">
+                        <span>🔄</span> クラス情報を同期する
+                    </button>
+                    <p id="google-last-sync" class="text-xs text-gray-400 mt-2">最終同期: 未実施</p>
                 </div>
+            </div>
 
-                <div class="col-span-1 md:col-span-2 flex items-end">
-                    <button onclick="createUserDirectly()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 w-full">ユーザー作成</button>
+            <!-- Teams -->
+            <div id="teams-integration" class="bg-white p-6 rounded shadow mb-6 hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-lg text-gray-700 flex items-center gap-2">
+                        <span class="text-indigo-600 text-xl">T</span> Microsoft Teams 連携
+                    </h3>
+                    <div id="teams-status">
+                        <button onclick="linkService('teams')" class="bg-indigo-600 text-white px-4 py-2 rounded shadow hover:bg-indigo-700">連携する</button>
+                    </div>
+                </div>
+                <div id="teams-panel" class="hidden border-t pt-4">
+                    <p class="mb-4 text-sm text-gray-600">L-Gateのクラス・メンバー情報をMicrosoft Teamsに同期します。</p>
+                    <button onclick="syncService('teams')" class="bg-green-600 text-white px-6 py-3 rounded shadow hover:bg-green-700 font-bold flex items-center gap-2">
+                        <span>🔄</span> クラス情報を同期する
+                    </button>
+                    <p id="teams-last-sync" class="text-xs text-gray-400 mt-2">最終同期: 未実施</p>
+                </div>
+            </div>
+
+            <!-- Sync Overlay -->
+            <div id="sync-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden flex items-center justify-center z-50">
+                <div class="bg-white p-8 rounded-lg shadow-xl text-center w-80">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4"></div>
+                    <h3 class="font-bold text-lg mb-2">同期中...</h3>
+                    <p id="sync-step-text" class="text-sm text-gray-500">処理を開始します</p>
                 </div>
             </div>
         </div>
 
-        <!-- Users List (Filtered by Class) -->
-        <div class="bg-white p-6 rounded shadow mt-8">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold">所属ユーザー一覧</h3>
-                <div class="flex gap-2">
-                    <select id="filter-class" class="border p-2 rounded text-sm" onchange="loadUsers()">
-                        <option value="">全クラス</option>
-                    </select>
-                    <button onclick="loadUsers()" class="text-blue-500 underline text-sm">更新</button>
+        <!-- TAB: MEXCBT -->
+        <div id="content-mexcbt" class="hidden">
+            <h2 class="text-2xl font-bold mb-6 text-gray-800">MEXCBT配信管理</h2>
+
+            <!-- Distribute -->
+            <div class="bg-white p-6 rounded shadow mb-8">
+                <h3 class="font-bold text-lg mb-4">クラス・個別配信</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-bold mb-1">テスト</label>
+                        <select id="mexcbt-test-select" class="w-full border p-2 rounded mb-2">
+                            <!-- JS -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-1">配信対象</label>
+                        <div class="flex gap-2">
+                            <select id="mexcbt-target-type" class="border p-2 rounded" onchange="toggleMexcbtTarget(this.value)">
+                                <option value="class">クラス全体</option>
+                                <option value="student">個別 (生徒)</option>
+                            </select>
+                            <select id="mexcbt-target-id" class="border p-2 rounded flex-grow">
+                                <!-- Populated -->
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 flex justify-end">
+                    <button onclick="distributeMexcbt()" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700">配信する</button>
                 </div>
             </div>
 
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm">
-                    <thead>
-                        <tr class="bg-gray-100">
-                            <th class="p-2 text-left">名前</th>
-                            <th class="p-2 text-left">Email</th>
-                            <th class="p-2 text-left">ロール</th>
-                            <th class="p-2 text-left">クラス</th>
-                            <th class="p-2 text-left">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="users-list"></tbody>
-                </table>
+            <!-- Results -->
+            <div class="bg-white p-6 rounded shadow">
+                <h3 class="font-bold text-lg mb-4">実施状況・結果</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="p-2">テスト名</th>
+                                <th class="p-2">対象</th>
+                                <th class="p-2">ステータス</th>
+                                <th class="p-2">配信日時</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mexcbt-history"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -111,6 +227,24 @@
     <script>
         let currentSchoolId = null;
         let currentTenantId = null;
+        let schoolFeatures = {};
+
+        // Tab Switching
+        function switchTab(tabId) {
+            ['manage', 'sync', 'mexcbt'].forEach(t => {
+                document.getElementById(`content-${t}`).classList.add('hidden');
+                const btn = document.getElementById(`tab-${t}`);
+                btn.classList.remove('bg-white', 'text-green-700', 'font-bold', 'border-t', 'border-l', 'border-r', 'rounded-t');
+                btn.classList.add('bg-gray-200', 'text-gray-600');
+            });
+            document.getElementById(`content-${tabId}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-${tabId}`);
+            activeBtn.classList.remove('bg-gray-200', 'text-gray-600');
+            activeBtn.classList.add('bg-white', 'text-green-700', 'font-bold', 'border-t', 'border-l', 'border-r', 'rounded-t');
+
+            if(tabId === 'sync') checkIntegrations();
+            if(tabId === 'mexcbt') loadMexcbtUI();
+        }
 
         auth.onAuthStateChanged(async user => {
             if (user) {
@@ -133,6 +267,7 @@
             }
         });
 
+        // --- Core Functions ---
         function togglePasswordGen() {
             const checkbox = document.getElementById('auto-generate-pass');
             const input = document.getElementById('user-password');
@@ -146,10 +281,182 @@
         async function loadSchoolInfo() {
             const doc = await db.collection('schools').doc(currentSchoolId).get();
             if (doc.exists) {
-                document.querySelector('#school-info h2').textContent = `学校: ${doc.data().name}`;
+                const d = doc.data();
+                document.querySelector('#school-info h2').textContent = `学校: ${d.name}`;
+                schoolFeatures = d.features || {};
             }
         }
 
+        // --- Sync Functions ---
+        async function checkIntegrations() {
+            // Check Features first
+            const gDiv = document.getElementById('google-integration');
+            const tDiv = document.getElementById('teams-integration');
+
+            if (schoolFeatures.googleSync) gDiv.classList.remove('hidden');
+            if (schoolFeatures.teamsSync) tDiv.classList.remove('hidden');
+
+            if (!schoolFeatures.googleSync && !schoolFeatures.teamsSync) {
+                // Show message if neither enabled by tenant
+                // Or maybe just show disabled state? User requirement: "Tenant Admin enables/disables".
+                // If disabled by tenant, school admin shouldn't see it or see it as locked.
+                // Here we hide.
+            }
+
+            // Check Linked Status
+            const intDoc = await db.collection('integrations').doc(currentSchoolId).get();
+            if (intDoc.exists) {
+                const d = intDoc.data();
+                if (d.googleLinked) {
+                    document.getElementById('google-status').innerHTML = '<span class="text-green-600 font-bold">連携済み</span> <button onclick="unlinkService(\'google\')" class="text-xs text-red-400 underline ml-2">解除</button>';
+                    document.getElementById('google-panel').classList.remove('hidden');
+                    if (d.lastGoogleSync) {
+                        document.getElementById('google-last-sync').textContent = '最終同期: ' + d.lastGoogleSync.toDate().toLocaleString();
+                    }
+                }
+                if (d.teamsLinked) {
+                    document.getElementById('teams-status').innerHTML = '<span class="text-green-600 font-bold">連携済み</span> <button onclick="unlinkService(\'teams\')" class="text-xs text-red-400 underline ml-2">解除</button>';
+                    document.getElementById('teams-panel').classList.remove('hidden');
+                    if (d.lastTeamsSync) {
+                        document.getElementById('teams-last-sync').textContent = '最終同期: ' + d.lastTeamsSync.toDate().toLocaleString();
+                    }
+                }
+            }
+        }
+
+        async function linkService(provider) {
+            const width = 600, height = 600;
+            const left = (screen.width - width) / 2;
+            const top = (screen.height - height) / 2;
+
+            const win = window.open("", "Link", `width=${width},height=${height},top=${top},left=${left}`);
+            win.document.write(`<h2>${provider}へ接続中...</h2><p>認証画面をシミュレートしています...</p>`);
+
+            try {
+                await IntegrationService.linkAccount(currentSchoolId, provider);
+                win.close();
+                alert("連携が完了しました");
+                checkIntegrations();
+            } catch(e) {
+                win.close();
+                alert("エラー: " + e.message);
+            }
+        }
+
+        async function unlinkService(provider) {
+            if(!confirm("連携を解除しますか？")) return;
+            await IntegrationService.unlinkAccount(currentSchoolId, provider);
+            // reset UI
+            document.getElementById(`${provider}-status`).innerHTML = `<button onclick="linkService('${provider}')" class="bg-blue-500 text-white px-4 py-2 rounded shadow hover:bg-blue-600">連携する</button>`;
+            document.getElementById(`${provider}-panel`).classList.add('hidden');
+            alert("解除しました");
+        }
+
+        async function syncService(provider) {
+            const overlay = document.getElementById('sync-overlay');
+            const txt = document.getElementById('sync-step-text');
+            overlay.classList.remove('hidden');
+
+            const process = await IntegrationService.syncClasses(currentSchoolId, provider);
+            const generator = process.run();
+
+            for await (const step of generator) {
+                txt.textContent = step;
+            }
+
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+                alert("同期が完了しました");
+                checkIntegrations();
+            }, 500);
+        }
+
+        // --- MEXCBT Functions ---
+        async function loadMexcbtUI() {
+            // Tests
+            const sel = document.getElementById('mexcbt-test-select');
+            sel.innerHTML = '';
+            MEXCBTService.availableTests.forEach(t => {
+                sel.innerHTML += `<option value="${t.id}">${t.title}</option>`;
+            });
+
+            // Target Population
+            toggleMexcbtTarget('class'); // Init
+
+            // History
+            loadMexcbtHistory();
+        }
+
+        async function toggleMexcbtTarget(type) {
+            const targetSel = document.getElementById('mexcbt-target-id');
+            targetSel.innerHTML = '<option>読み込み中...</option>';
+
+            if (type === 'class') {
+                if (window.classListCache) {
+                    targetSel.innerHTML = '';
+                    window.classListCache.forEach(c => {
+                         targetSel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+                    });
+                } else {
+                    await loadClasses(); // Refresh cache
+                    toggleMexcbtTarget('class');
+                }
+            } else {
+                // Students
+                const snap = await db.collection('users').where('schoolId', '==', currentSchoolId).where('role', '==', 'student').get();
+                targetSel.innerHTML = '';
+                snap.forEach(d => {
+                    targetSel.innerHTML += `<option value="${d.id}">${d.data().name} (${d.data().email})</option>`;
+                });
+            }
+        }
+
+        async function distributeMexcbt() {
+            const testId = document.getElementById('mexcbt-test-select').value;
+            const targetType = document.getElementById('mexcbt-target-type').value;
+            const targetId = document.getElementById('mexcbt-target-id').value;
+
+            if(!testId || !targetId) return;
+
+            try {
+                if(targetType === 'class') {
+                    await MEXCBTService.distributeToClass(currentSchoolId, currentTenantId, testId, targetId);
+                } else {
+                    await MEXCBTService.distributeToStudent(currentSchoolId, currentTenantId, testId, targetId);
+                }
+                alert("配信しました");
+                loadMexcbtHistory();
+            } catch(e) {
+                alert("配信失敗");
+            }
+        }
+
+        async function loadMexcbtHistory() {
+            const tbody = document.getElementById('mexcbt-history');
+            tbody.innerHTML = '';
+
+            // Query assignments where schoolId == this
+            const snap = await db.collection('mexcbt_assignments')
+                .where('schoolId', '==', currentSchoolId)
+                .orderBy('distributedAt', 'desc')
+                .limit(10)
+                .get();
+
+            snap.forEach(doc => {
+                const d = doc.data();
+                const tr = document.createElement('tr');
+                const date = d.distributedAt ? d.distributedAt.toDate().toLocaleString() : '';
+                tr.innerHTML = `
+                    <td class="p-2">${d.testId}</td>
+                    <td class="p-2">${d.targetType}: ${d.targetId}</td>
+                    <td class="p-2">${d.status}</td>
+                    <td class="p-2 text-xs text-gray-500">${date}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // --- Existing Class/User Loaders ---
         async function loadClasses() {
             const list = document.getElementById('class-list');
             const select = document.getElementById('user-class');
@@ -174,7 +481,7 @@
                     <div>
                         <span>${data.name}</span> <span class="text-gray-400 text-xs ml-2">${doc.id}</span>
                     </div>
-                    <button onclick="deleteClassFull('${doc.id}')" class="text-red-500 text-xs border border-red-500 px-2 py-1 rounded hover:bg-red-50">削除 (全データ)</button>
+                    <button onclick="deleteClassFull('${doc.id}')" class="text-red-500 text-xs border border-red-500 px-2 py-1 rounded hover:bg-red-50">削除</button>
                 `;
                 list.appendChild(li);
 

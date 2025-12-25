@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>MEXCBTテスト</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/mexcbt-service.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <div class="container mx-auto p-4 max-w-2xl">
+        <header class="flex justify-between items-center mb-6 border-b pb-4">
+            <h1 class="text-xl font-bold text-gray-800">MEXCBT テスト実施</h1>
+            <button onclick="window.close()" class="text-gray-500">閉じる</button>
+        </header>
+
+        <div id="loading" class="text-center py-12">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto"></div>
+            <p class="mt-4 text-gray-500">テストを読み込んでいます...</p>
+        </div>
+
+        <div id="test-content" class="hidden">
+            <div class="bg-white p-6 rounded shadow mb-6">
+                <h2 id="test-title" class="text-2xl font-bold mb-2"></h2>
+                <div class="flex gap-4 text-sm text-gray-500">
+                    <span id="test-subject"></span>
+                    <span id="test-grade"></span>
+                </div>
+            </div>
+
+            <form id="test-form" onsubmit="submitTest(event)">
+                <div id="questions-container" class="space-y-6">
+                    <!-- Questions go here -->
+                </div>
+
+                <div class="mt-8 text-center">
+                    <button type="submit" class="bg-indigo-600 text-white font-bold py-3 px-8 rounded-full hover:bg-indigo-700 shadow-lg transform transition hover:scale-105">
+                        回答を提出する
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div id="result-view" class="hidden">
+            <div class="bg-white p-8 rounded shadow text-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">お疲れ様でした！</h2>
+                <div class="text-6xl font-bold text-indigo-600 mb-2">
+                    <span id="result-score"></span> <span class="text-2xl text-gray-400">/ <span id="result-total"></span></span>
+                </div>
+                <p class="text-gray-500">正答率: <span id="result-percent"></span>%</p>
+            </div>
+
+            <div class="bg-white p-6 rounded shadow">
+                <h3 class="font-bold text-lg mb-4">振り返り (Reflection)</h3>
+                <p class="text-sm text-gray-600 mb-2">このテストを通して学んだことや、難しかったことを記録しましょう。</p>
+                <textarea id="reflection-comment" class="w-full border p-3 rounded h-32 mb-4" placeholder="ここに入力してください..."></textarea>
+                <button onclick="saveReflection()" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 w-full">振り返りを保存して終了</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const testId = urlParams.get('testId');
+
+        let currentUser = null;
+        let userProfile = null;
+        let testData = null;
+        let resultId = null;
+
+        auth.onAuthStateChanged(async user => {
+            if (user) {
+                currentUser = user;
+                const doc = await db.collection('users').doc(user.uid).get();
+                if (doc.exists) userProfile = doc.data();
+
+                if (testId) {
+                    loadTest(testId);
+                } else {
+                    alert("テストIDが指定されていません");
+                }
+            } else {
+                window.location.href = 'login.html';
+            }
+        });
+
+        async function loadTest(id) {
+            try {
+                testData = await MEXCBTService.getTestContent(id);
+                if (!testData) throw new Error("テストが見つかりません");
+
+                document.getElementById('test-title').textContent = testData.title;
+                document.getElementById('test-subject').textContent = `教科: ${testData.subject}`;
+                document.getElementById('test-grade').textContent = `学年: ${testData.grade}`;
+
+                const container = document.getElementById('questions-container');
+                container.innerHTML = '';
+
+                testData.questions.forEach((q, idx) => {
+                    const div = document.createElement('div');
+                    div.className = "bg-white p-6 rounded shadow border-l-4 border-indigo-500";
+
+                    let inputHtml = '';
+                    if (q.type === 'choice') {
+                        inputHtml = `<div class="mt-4 space-y-2">`;
+                        q.options.forEach((opt, optIdx) => {
+                            inputHtml += `
+                                <label class="flex items-center p-3 border rounded hover:bg-gray-50 cursor-pointer">
+                                    <input type="radio" name="q_${idx}" value="${opt}" class="form-radio h-5 w-5 text-indigo-600" required>
+                                    <span class="ml-2">${opt}</span>
+                                </label>
+                            `;
+                        });
+                        inputHtml += `</div>`;
+                    } else {
+                        inputHtml = `
+                            <div class="mt-4">
+                                <input type="text" name="q_${idx}" placeholder="回答を入力" class="w-full border p-3 rounded text-lg" required>
+                            </div>
+                        `;
+                    }
+
+                    div.innerHTML = `
+                        <div class="flex items-start gap-4">
+                            <div class="bg-indigo-100 text-indigo-800 font-bold px-3 py-1 rounded">Q${idx + 1}</div>
+                            <div class="text-lg font-bold text-gray-800">${q.text}</div>
+                        </div>
+                        ${inputHtml}
+                    `;
+                    container.appendChild(div);
+                });
+
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('test-content').classList.remove('hidden');
+
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        async function submitTest(e) {
+            e.preventDefault();
+            if(!confirm("提出しますか？")) return;
+
+            const formData = new FormData(e.target);
+            const answers = [];
+
+            testData.questions.forEach((q, idx) => {
+                answers.push(formData.get(`q_${idx}`));
+            });
+
+            try {
+                // Save to DB
+                // Need classId from profile (assuming student has at least one affiliation or classId)
+                let classId = userProfile.classId;
+                // If not in profile, maybe check affiliations. For now use classId or null.
+
+                const docRef = await MEXCBTService.submitResult(
+                    currentUser.uid,
+                    classId,
+                    userProfile.schoolId,
+                    userProfile.tenantId,
+                    testId,
+                    answers
+                );
+
+                resultId = docRef.id;
+
+                // Show Result immediately (Simple Engine)
+                const doc = await docRef.get();
+                const res = doc.data();
+
+                document.getElementById('test-content').classList.add('hidden');
+                document.getElementById('result-view').classList.remove('hidden');
+
+                document.getElementById('result-score').textContent = res.score;
+                document.getElementById('result-total').textContent = res.totalQuestions;
+                document.getElementById('result-percent').textContent = Math.round((res.score / res.totalQuestions) * 100);
+
+                window.scrollTo(0,0);
+
+            } catch(e) {
+                console.error(e);
+                alert("送信エラー: " + e.message);
+            }
+        }
+
+        async function saveReflection() {
+            const comment = document.getElementById('reflection-comment').value;
+            if(!comment) return alert("コメントを入力してください");
+
+            try {
+                await MEXCBTService.saveReflection(resultId, comment);
+                alert("保存しました。ダッシュボードに戻ります。");
+                window.location.href = 'student-dashboard.html';
+            } catch(e) {
+                alert("保存失敗");
+            }
+        }
+    </script>
+</body>
+</html>

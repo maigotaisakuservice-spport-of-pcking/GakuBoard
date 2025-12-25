@@ -101,7 +101,12 @@ async function deleteCollectionByQuery(db, collectionName, queryFn) {
 async function deleteUserAndData(db, userId) {
     // 1. Delete Daily Records
     await deleteCollectionByQuery(db, 'daily_records', ref => ref.where('studentId', '==', userId));
-    // 2. Delete User Doc
+    // 2. Delete MEXCBT Results
+    await deleteCollectionByQuery(db, 'mexcbt_results', ref => ref.where('studentId', '==', userId));
+    // 3. Delete MEXCBT Assignments
+    await deleteCollectionByQuery(db, 'mexcbt_assignments', ref => ref.where('targetId', '==', userId).where('targetType', '==', 'student'));
+
+    // 4. Delete User Doc
     await db.collection('users').doc(userId).delete();
     console.log(`Deleted user and data: ${userId}`);
 }
@@ -111,12 +116,23 @@ async function deleteClassAndData(db, classId) {
     const usersSnapshot = await db.collection('users').where('classId', '==', classId).get();
 
     // 2. Delete Each Student and their Data
-    // We do this sequentially or in parallel? Parallel is faster but might hit rate limits if huge.
-    // For now, Promise.all is okay for small scale.
     const deletePromises = usersSnapshot.docs.map(doc => deleteUserAndData(db, doc.id));
     await Promise.all(deletePromises);
 
-    // 3. Delete Class Doc
+    // 3. Delete Subcollections (active_boards)
+    // Firestore does not delete subcollections automatically.
+    // We must manually fetch and delete documents within 'active_boards'.
+    const activeBoardsRef = db.collection('classes').doc(classId).collection('active_boards');
+    const boardsSnap = await activeBoardsRef.get();
+
+    if (!boardsSnap.empty) {
+        const batch = db.batch();
+        boardsSnap.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        console.log(`Deleted active_boards for class: ${classId}`);
+    }
+
+    // 4. Delete Class Doc
     await db.collection('classes').doc(classId).delete();
     console.log(`Deleted class and users: ${classId}`);
 }
@@ -130,17 +146,17 @@ async function deleteSchoolAndData(db, schoolId) {
     await Promise.all(deleteClassPromises);
 
     // 3. Find Users (School Admins / Unassigned Users) in School
-    // Note: Students are deleted by class deletion, but what if they are unassigned or School Admins?
     const usersSnapshot = await db.collection('users').where('schoolId', '==', schoolId).get();
-    // Some users might have been deleted already if they were in a class?
-    // deleteUserAndData handles deletion of user doc. If doc is already deleted, it's fine.
     const deleteUserPromises = usersSnapshot.docs.map(doc => deleteUserAndData(db, doc.id));
     await Promise.all(deleteUserPromises);
 
     // 4. Delete Whitelist entries
     await deleteCollectionByQuery(db, 'whitelist', ref => ref.where('schoolId', '==', schoolId));
 
-    // 5. Delete School Doc
+    // 5. Delete Integrations Settings
+    await db.collection('integrations').doc(schoolId).delete();
+
+    // 6. Delete School Doc
     await db.collection('schools').doc(schoolId).delete();
     console.log(`Deleted school and all data: ${schoolId}`);
 }
