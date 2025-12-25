@@ -1,14 +1,17 @@
 // js/teacher-dashboard.js
 
 let currentUser = null;
-let currentClassId = null;
+let currentClassId = null; // The currently selected context class ID
+let availableClasses = []; // List of all classes teacher belongs to
 let wbUnsubscribe = null;
 
 // Init
 auth.onAuthStateChanged(async user => {
     if (user) {
         currentUser = user;
-        const doc = await db.collection('users').doc(user.uid).get();
+        const userDocRef = db.collection('users').doc(user.uid);
+        const doc = await userDocRef.get();
+
         if (doc.exists) {
             const data = doc.data();
             // Verify role
@@ -17,22 +20,119 @@ auth.onAuthStateChanged(async user => {
                 window.location.href = 'login.html';
                 return;
             }
-            currentClassId = data.classId;
+
+            // 1. Check Profile Completion
+            // If function is imported from profile-setup.js
+            if (typeof checkAndShowProfileSetup === 'function') {
+                await checkAndShowProfileSetup(user, db);
+            }
+
+            // 2. Load Affiliated Classes
+            await loadAffiliatedClasses(data);
+
+            // 3. Initial Load
             document.getElementById('loading').classList.add('hidden');
-            showSection('home');
 
             // Set date picker to today
-            document.getElementById('daily-date-picker').valueAsDate = new Date();
+            const dp = document.getElementById('daily-date-picker');
+            if(dp) dp.valueAsDate = new Date();
+
+            showSection('home');
         }
     } else {
         window.location.href = 'login.html';
     }
 });
 
+/**
+ * Load classes based on affiliations or backward compatibility 'classId'
+ */
+async function loadAffiliatedClasses(userData) {
+    availableClasses = [];
+    const select = document.getElementById('ctx-class-select');
+    select.innerHTML = '';
+
+    // A. New 'affiliations' array
+    if (userData.affiliations && Array.isArray(userData.affiliations) && userData.affiliations.length > 0) {
+        const classIds = userData.affiliations.map(a => a.classId);
+
+        // Fetch class details (Name, etc.)
+        // Firestore 'in' query limit is 10. If teacher has >10 classes, we might need logic.
+        // For now, assume < 10.
+        if (classIds.length > 0) {
+            // Chunking if necessary, but keep simple
+            const chunks = [];
+            for (let i = 0; i < classIds.length; i += 10) {
+                 chunks.push(classIds.slice(i, i + 10));
+            }
+
+            for (const chunk of chunks) {
+                const snap = await db.collection('classes').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get();
+                snap.forEach(d => availableClasses.push({ id: d.id, ...d.data() }));
+            }
+        }
+    }
+    // B. Old 'classId' fallback
+    else if (userData.classId) {
+        const clsDoc = await db.collection('classes').doc(userData.classId).get();
+        if (clsDoc.exists) {
+            availableClasses.push({ id: clsDoc.id, ...clsDoc.data() });
+        }
+    }
+
+    // Populate Dropdown
+    if (availableClasses.length === 0) {
+        const opt = document.createElement('option');
+        opt.text = "所属クラスなし";
+        select.appendChild(opt);
+        return;
+    }
+
+    availableClasses.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        select.appendChild(opt);
+    });
+
+    // Event Listener for Switch
+    select.onchange = (e) => switchClassContext(e.target.value);
+
+    // Set Initial Context (First one)
+    switchClassContext(availableClasses[0].id);
+}
+
+function switchClassContext(classId) {
+    currentClassId = classId;
+    const cls = availableClasses.find(c => c.id === classId);
+
+    // Update UI Header
+    const homeHeader = document.getElementById('home-class-name');
+    if (homeHeader) homeHeader.textContent = cls ? `(${cls.name})` : '';
+
+    // Set Dropdown Value (if changed programmatically)
+    const select = document.getElementById('ctx-class-select');
+    if (select.value !== classId) select.value = classId;
+
+    console.log("Switched context to:", cls ? cls.name : classId);
+
+    // Refresh current section
+    const activeSection = document.querySelector('section:not(.hidden)');
+    if (activeSection) {
+        const secId = activeSection.id.replace('section-', '');
+        loadSectionData(secId);
+    }
+}
+
 // Navigation
 function showSection(id) {
     document.querySelectorAll('section').forEach(el => el.classList.add('hidden'));
     document.getElementById(`section-${id}`).classList.remove('hidden');
+    loadSectionData(id);
+}
+
+function loadSectionData(id) {
+    if (!currentClassId) return;
 
     if (id === 'daily') loadDailyRecords();
     if (id === 'portal') loadPortalLinks();
@@ -45,15 +145,27 @@ function showSection(id) {
 
 // --- HOME ---
 async function loadHomeStats() {
-    // Simple stats: Count of daily records today vs total students
     if (!currentClassId) return;
 
     // Get Student Count (approx)
+    // Note: We need to count users who have this classId in their affiliations OR legacy classId
+    // Complex Query in Firestore.
+    // Simplified: Query users where classId == current (legacy) OR array-contains?
+    // "affiliations" is an array of objects, so we can't use array-contains easily on ID alone.
+    // Compromise: Just count legacy classId users for now or fetch all school users and filter?
+    // Given we are client-side only:
+    // fetch users in School, filter in memory (might be heavy if huge school).
+    // Or, we assume legacy 'classId' is still primary for "Home Room".
+    // Let's rely on 'classId' field if it exists, or skip precise count.
+
+    // Better Approach: Store a 'memberCount' in the class document? No, sync issues.
+    // Let's try to query 'classId' == currentClassId first (Legacy/Primary).
+
     const studentsSnap = await db.collection('users')
         .where('classId', '==', currentClassId)
         .where('role', '==', 'student')
         .get();
-    const studentCount = studentsSnap.size;
+    let studentCount = studentsSnap.size;
 
     // Get Today's Records
     const today = new Date();
@@ -66,11 +178,12 @@ async function loadHomeStats() {
 
     const html = `
         <div class="text-4xl font-bold text-center text-gray-700">
-            ${recordCount} <span class="text-lg text-gray-400">/ ${studentCount}</span>
+            ${recordCount} <span class="text-lg text-gray-400">/ ${studentCount} (主所属)</span>
         </div>
         <p class="text-center text-sm text-gray-500 mt-2">本日の健康観察提出済み</p>
     `;
-    document.getElementById('home-stats').innerHTML = html;
+    const statsEl = document.getElementById('home-stats');
+    if (statsEl) statsEl.innerHTML = html;
 }
 
 function launchActivity(type) {
@@ -83,9 +196,11 @@ function launchActivity(type) {
 // --- WHITEBOARDS ---
 function loadWhiteboards() {
     if (wbUnsubscribe) wbUnsubscribe();
+    if (!currentClassId) return;
 
     const list = document.getElementById('wb-list');
     const btn = document.getElementById('btn-create-wb');
+    if(!list) return;
 
     wbUnsubscribe = db.collection('classes').doc(currentClassId).collection('active_boards')
         .onSnapshot(snap => {
@@ -93,13 +208,17 @@ function loadWhiteboards() {
             const count = snap.size;
 
             if (count >= 5) {
-                btn.disabled = true;
-                btn.classList.add('opacity-50', 'cursor-not-allowed');
-                btn.innerText = "上限";
+                if(btn) {
+                    btn.disabled = true;
+                    btn.classList.add('opacity-50', 'cursor-not-allowed');
+                    btn.innerText = "上限";
+                }
             } else {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-                btn.innerText = "作成";
+                if(btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    btn.innerText = "作成";
+                }
             }
 
             if (snap.empty) {
@@ -141,6 +260,7 @@ function joinWhiteboard(boardId, name) {
 
 // --- DAILY RECORDS ---
 async function loadDailyRecords() {
+    if (!currentClassId) return;
     const list = document.getElementById('daily-list');
     list.innerHTML = '<tr><td colspan="5" class="p-4 text-center">読み込み中...</td></tr>';
 
@@ -186,7 +306,9 @@ async function loadDailyRecords() {
 
 // --- PORTAL ---
 async function loadPortalLinks() {
+    if (!currentClassId) return;
     const container = document.getElementById('portal-list-edit');
+    if(!container) return;
     container.innerHTML = '';
 
     const snap = await db.collection('portal_links').where('classId', '==', currentClassId).get();
@@ -237,7 +359,9 @@ async function deletePortalLink(id) {
 
 // --- ANNOUNCEMENTS ---
 async function loadAnnouncements() {
+    if (!currentClassId) return;
     const div = document.getElementById('announce-history');
+    if(!div) return;
     div.innerHTML = '';
 
     const snap = await db.collection('announcements')

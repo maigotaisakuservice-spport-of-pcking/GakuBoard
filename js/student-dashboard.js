@@ -1,7 +1,8 @@
 // js/student-dashboard.js
 
 let currentUser = null;
-let currentClassId = null;
+let currentAffiliations = []; // Array of { classId, yearType, attendanceNumber }
+let primaryClassId = null; // The main class for daily records
 let selectedMood = null;
 
 auth.onAuthStateChanged(async user => {
@@ -15,18 +16,70 @@ auth.onAuthStateChanged(async user => {
                 window.location.href = 'login.html';
                 return;
             }
-            currentClassId = data.classId;
-            document.getElementById('student-name').textContent = data.name || user.email; // Assuming name field or fallback
 
+            // 1. Check Profile Completion (Tell me about yourself)
+            if (typeof checkAndShowProfileSetup === 'function') {
+                await checkAndShowProfileSetup(user, db);
+            }
+
+            // 2. Set User Data
+            document.getElementById('student-name').textContent = data.name || user.email;
+
+            // 3. Resolve Affiliations
+            await resolveAffiliations(data);
+
+            // 4. Load Features
             checkDailySubmission();
-            loadPortal();
-            loadAnnouncements();
-            loadActivities();
+            loadUnifiedPortal();
+            loadUnifiedAnnouncements();
+            loadUnifiedActivities();
         }
     } else {
         window.location.href = 'login.html';
     }
 });
+
+async function resolveAffiliations(userData) {
+    currentAffiliations = [];
+
+    // A. New array format
+    if (userData.affiliations && Array.isArray(userData.affiliations)) {
+        currentAffiliations = userData.affiliations;
+    }
+    // B. Legacy single ID
+    else if (userData.classId) {
+        currentAffiliations.push({ classId: userData.classId, yearType: 'current' });
+    }
+
+    // Determine "Primary" class for Daily Record defaults
+    // Logic: First 'current' class, or just first one.
+    const primary = currentAffiliations.find(a => a.yearType === 'current');
+    primaryClassId = primary ? primary.classId : (currentAffiliations[0]?.classId || null);
+
+    // If multiple classes, populate Daily Record selector
+    const selectorContainer = document.getElementById('daily-class-selector-container');
+    const selector = document.getElementById('daily-class-select');
+
+    if (currentAffiliations.length > 1) {
+        selectorContainer.classList.remove('hidden');
+        selector.innerHTML = '';
+
+        // Fetch Names (optional optimization: cache these)
+        // For now, fetch to display names
+        for (const aff of currentAffiliations) {
+            const clsDoc = await db.collection('classes').doc(aff.classId).get();
+            if (clsDoc.exists) {
+                const opt = document.createElement('option');
+                opt.value = aff.classId;
+                opt.textContent = clsDoc.data().name;
+                if (aff.classId === primaryClassId) opt.selected = true;
+                selector.appendChild(opt);
+            }
+        }
+    } else {
+        selectorContainer.classList.add('hidden');
+    }
+}
 
 function selectMood(mood, btn) {
     selectedMood = mood;
@@ -35,14 +88,16 @@ function selectMood(mood, btn) {
 }
 
 async function checkDailySubmission() {
+    // Check submission for CURRENT user (regardless of class, or filtered?)
+    // Requirement: "1 day 1 submission" is generally per student.
+    // However, if they have multiple classes (e.g. HR + Club), do they submit twice?
+    // "Daily Health Record" is usually one per person.
+    // So we check if ANY record exists for studentId today.
+
     try {
-        // Query by studentId only to avoid composite index requirement (studentId + createdAt)
-        // Client-side filtering is acceptable for prototype data volumes
         const snap = await db.collection('daily_records')
             .where('studentId', '==', currentUser.uid)
             .get();
-
-        const todayStr = new Date().toDateString();
 
         let submittedToday = false;
         const now = new Date();
@@ -52,15 +107,7 @@ async function checkDailySubmission() {
 
         snap.forEach(doc => {
             const data = doc.data();
-            let rDate;
-
-            // Handle pending writes where serverTimestamp is not yet resolved (null)
-            if (data.createdAt) {
-                rDate = data.createdAt.toDate();
-            } else {
-                // If null, it's a local pending write -> "Just now" -> Today
-                rDate = new Date();
-            }
+            let rDate = data.createdAt ? data.createdAt.toDate() : new Date();
 
             if (rDate.getFullYear() === todayY &&
                 rDate.getMonth() === todayM &&
@@ -84,12 +131,29 @@ async function submitDaily() {
     if (!temp) return alert("体温を入れてね！");
     const comment = document.getElementById('daily-comment').value;
 
+    // Determine Target Class
+    let targetClassId = primaryClassId;
+    const selector = document.getElementById('daily-class-select');
+    if (!selector.closest('div').classList.contains('hidden')) {
+        targetClassId = selector.value;
+    }
+
+    if (!targetClassId) return alert("クラスが見つかりません");
+
     try {
+        // Need schoolId for rules?
+        // We can fetch it from user profile, or just let backend handle it if we relaxed rules.
+        // But better to save it. We can get it from the class doc or user doc.
+        // Assuming user.schoolId is still valid as "Primary School".
+        // If multi-school support needed, logic gets harder. Assume single school for now.
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        const schoolId = userDoc.data().schoolId;
+
         await db.collection('daily_records').add({
             studentId: currentUser.uid,
-            studentName: document.getElementById('student-name').textContent, // Cache name
-            classId: currentClassId,
-            schoolId: null, // Should fetch from user profile if needed, or derived
+            studentName: document.getElementById('student-name').textContent,
+            classId: targetClassId,
+            schoolId: schoolId,
             mood: selectedMood,
             temperature: parseFloat(temp),
             comment: comment,
@@ -103,11 +167,22 @@ async function submitDaily() {
     }
 }
 
-async function loadPortal() {
+// --- UNIFIED VIEW LOGIC ---
+// We fetch data from ALL affiliated classes and merge them.
+
+async function loadUnifiedPortal() {
     const grid = document.getElementById('portal-grid');
     grid.innerHTML = '';
 
-    const snap = await db.collection('portal_links').where('classId', '==', currentClassId).get();
+    // Firestore "in" query limitation (max 10)
+    const classIds = currentAffiliations.map(a => a.classId);
+    if (classIds.length === 0) return;
+
+    // Use chunks if needed (assuming < 10 for now)
+    const snap = await db.collection('portal_links')
+        .where('classId', 'in', classIds) // Filter by array
+        .get();
+
     snap.forEach(doc => {
         const d = doc.data();
         const a = document.createElement('a');
@@ -123,18 +198,30 @@ async function loadPortal() {
     });
 }
 
-async function loadAnnouncements() {
+async function loadUnifiedAnnouncements() {
     const list = document.getElementById('announce-list');
     list.innerHTML = '';
 
+    const classIds = currentAffiliations.map(a => a.classId);
+    if (classIds.length === 0) return;
+
+    // "in" query + orderBy requires composite index.
+    // Client-side sorting is safer for prototype without manual index creation.
     const snap = await db.collection('announcements')
-        .where('classId', '==', currentClassId)
-        .orderBy('createdAt', 'desc')
-        .limit(5)
+        .where('classId', 'in', classIds)
         .get();
 
-    snap.forEach(doc => {
-        const d = doc.data();
+    let announcements = [];
+    snap.forEach(doc => announcements.push(doc.data()));
+
+    // Sort client-side
+    announcements.sort((a, b) => {
+        const tA = a.createdAt ? a.createdAt.toMillis() : 0;
+        const tB = b.createdAt ? b.createdAt.toMillis() : 0;
+        return tB - tA; // Descending
+    });
+
+    announcements.forEach(d => {
         const div = document.createElement('div');
         div.className = "bg-white p-4 rounded-xl shadow";
         const date = d.createdAt ? d.createdAt.toDate().toLocaleDateString() : '';
@@ -149,67 +236,127 @@ async function loadAnnouncements() {
     });
 }
 
-function loadActivities() {
-    // Screen Share
-    db.collection('activities').doc(`screenshare_${currentClassId}`).onSnapshot(doc => {
-        const card = document.getElementById('ss-card');
-        const btn = document.getElementById('btn-join-ss');
-        const txt = document.getElementById('ss-status-text');
+function loadUnifiedActivities() {
+    // 1. Screen Share (Monitor ALL classes)
+    // We can't do "onSnapshot" with "in" query easily for specific docs.
+    // So we loop through classIds and set up listeners.
+    const classIds = currentAffiliations.map(a => a.classId);
 
-        const isPresenting = doc.exists && doc.data().isPresenting;
+    // Clear listeners if re-running (not implemented here but good practice)
 
-        if (isPresenting) {
-            card.classList.remove('opacity-50', 'border-gray-300');
-            card.classList.add('border-green-500');
-            btn.disabled = false;
-            btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-            btn.classList.add('bg-green-600', 'hover:bg-green-700');
-            txt.textContent = "先生の画面共有 (開催中)";
-            txt.classList.add('text-green-800');
-        } else {
-            card.classList.add('opacity-50', 'border-gray-300');
-            card.classList.remove('border-green-500');
-            btn.disabled = true;
-            btn.classList.add('bg-gray-400', 'cursor-not-allowed');
-            btn.classList.remove('bg-green-600', 'hover:bg-green-700');
-            txt.textContent = "先生の画面共有 (待機中)";
-            txt.classList.remove('text-green-800');
-        }
-    });
+    classIds.forEach(cid => {
+        db.collection('activities').doc(`screenshare_${cid}`).onSnapshot(doc => {
+            const isPresenting = doc.exists && doc.data().isPresenting;
+            if (isPresenting) {
+                updateScreenShareUI(true, cid);
+            } else {
+                // Only turn off if NO other class is presenting (complex?)
+                // Actually, if ANY class is presenting, show it.
+                // Prioritize the last update?
+                // Simplification: Just update UI. If multiple teachers stream, it might flicker.
+                // But rare case.
+                updateScreenShareUI(false, cid);
+            }
+        });
 
-    // Whiteboards
-    db.collection('classes').doc(currentClassId).collection('active_boards').onSnapshot(snap => {
-        const list = document.getElementById('wb-list');
-        list.innerHTML = '';
-
-        if (snap.empty) {
-            list.innerHTML = '<p class="text-gray-500 text-sm">現在開催中のボードはありません</p>';
-            return;
-        }
-
-        snap.forEach(doc => {
-            const data = doc.data();
-            const div = document.createElement('div');
-            div.className = "flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100";
-            const count = data.studentCount || 0;
-            div.innerHTML = `
-                <div>
-                    <span class="font-bold text-blue-900 block">${data.name}</span>
-                    <span class="text-xs text-blue-500">参加人数: ${count}人</span>
-                </div>
-                <button onclick="joinActivity('whiteboard', '${doc.id}')" class="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700">参加</button>
-            `;
-            list.appendChild(div);
+        // 2. Whiteboards
+        db.collection('classes').doc(cid).collection('active_boards').onSnapshot(snap => {
+            updateWhiteboardList(cid, snap);
         });
     });
 }
 
-function joinActivity(type, boardId) {
-    if (!currentClassId) return;
+function updateScreenShareUI(isPresenting, classId) {
+    const card = document.getElementById('ss-card');
+    const btn = document.getElementById('btn-join-ss');
+    const txt = document.getElementById('ss-status-text');
+
+    // If we are already showing active, don't overwrite with inactive from another class
+    if (!isPresenting && btn.dataset.activeClass) {
+        if (btn.dataset.activeClass !== classId) return; // Ignore inactive signal from other class
+    }
+
+    if (isPresenting) {
+        card.classList.remove('opacity-50', 'border-gray-300');
+        card.classList.add('border-green-500');
+        btn.disabled = false;
+        btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+        btn.classList.add('bg-green-600', 'hover:bg-green-700');
+        txt.textContent = "先生の画面共有 (開催中)";
+        txt.classList.add('text-green-800');
+
+        btn.dataset.activeClass = classId; // Store which class is active
+        btn.onclick = () => joinActivity('screenshare', null, classId);
+
+    } else {
+        card.classList.add('opacity-50', 'border-gray-300');
+        card.classList.remove('border-green-500');
+        btn.disabled = true;
+        btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+        btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+        txt.textContent = "先生の画面共有 (待機中)";
+        txt.classList.remove('text-green-800');
+
+        delete btn.dataset.activeClass;
+    }
+}
+
+// Helper to accumulate whiteboard across classes
+// This is tricky with multiple listeners. Ideally we merge a state object.
+const wbState = {};
+
+function updateWhiteboardList(classId, snap) {
+    wbState[classId] = [];
+    snap.forEach(doc => wbState[classId].push({ id: doc.id, ...doc.data() }));
+
+    renderWhiteboards();
+}
+
+async function renderWhiteboards() {
+    const list = document.getElementById('wb-list');
+    list.innerHTML = '';
+
+    let totalBoards = 0;
+
+    // We need class names to display properly
+    // cache or fetch? We fetch in resolveAffiliations names? No, only on select.
+    // Let's fetch class name on the fly or generic.
+
+    for (const [cid, boards] of Object.entries(wbState)) {
+        for (const b of boards) {
+            totalBoards++;
+
+            const div = document.createElement('div');
+            div.className = "flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100";
+            const count = b.studentCount || 0;
+
+            // Try to get class name from selector if populated, or cache
+            // Fallback: just ID or nothing.
+            // Better: "Class A - Board 1"
+
+            div.innerHTML = `
+                <div>
+                    <span class="font-bold text-blue-900 block">${b.name}</span>
+                    <span class="text-xs text-blue-500">参加: ${count}人</span>
+                </div>
+                <button onclick="joinActivity('whiteboard', '${b.id}', '${cid}')" class="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700">参加</button>
+            `;
+            list.appendChild(div);
+        }
+    }
+
+    if (totalBoards === 0) {
+        list.innerHTML = '<p class="text-gray-500 text-sm">現在開催中のボードはありません</p>';
+    }
+}
+
+function joinActivity(type, boardId, classId) {
+    if (!classId && currentClassId) classId = currentClassId; // Fallback
+    if (!classId) return;
 
     if (type === 'screenshare') {
-        window.location.href = `screenshare.html?classId=${currentClassId}&mode=student`;
+        window.location.href = `screenshare.html?classId=${classId}&mode=student`;
     } else if (type === 'whiteboard') {
-        window.location.href = `whiteboard.html?classId=${currentClassId}&boardId=${boardId}&mode=student`;
+        window.location.href = `whiteboard.html?classId=${classId}&boardId=${boardId}&mode=student`;
     }
 }

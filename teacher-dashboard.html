@@ -10,12 +10,22 @@
     <script src="js/firebase-config.js"></script>
     <script src="js/firebase-init.js"></script>
     <script src="js/auth.js"></script>
+    <script src="js/profile-setup.js"></script>
 </head>
 <body class="bg-gray-50 h-screen flex overflow-hidden">
 
     <!-- Sidebar -->
     <aside class="w-64 bg-indigo-900 text-white flex-shrink-0 hidden md:flex flex-col">
         <div class="p-4 text-center font-bold text-xl border-b border-indigo-800">GAKU-Board</div>
+
+        <!-- Context Switcher -->
+        <div class="p-4 border-b border-indigo-800">
+             <label class="text-xs text-gray-400 block mb-1">表示クラス:</label>
+             <select id="ctx-class-select" class="w-full bg-indigo-800 text-white text-sm border-none rounded p-2 focus:ring-0 cursor-pointer">
+                 <option value="">読み込み中...</option>
+             </select>
+        </div>
+
         <nav class="flex-grow p-4 space-y-2">
             <button onclick="showSection('home')" class="w-full text-left p-2 rounded hover:bg-indigo-800">ホーム</button>
             <button onclick="showSection('daily')" class="w-full text-left p-2 rounded hover:bg-indigo-800">毎日の記録</button>
@@ -31,6 +41,7 @@
     <main class="flex-grow flex flex-col overflow-y-auto">
         <header class="bg-white shadow p-4 flex justify-between items-center md:hidden">
             <div class="font-bold">GAKU-Board 先生</div>
+            <!-- Mobile Context Switcher could go here -->
             <button onclick="handleLogout()" class="text-red-600 text-sm">ログアウト</button>
         </header>
 
@@ -39,7 +50,7 @@
 
             <!-- HOME Section -->
             <section id="section-home" class="hidden space-y-6">
-                <h2 class="text-2xl font-bold text-gray-800">ホーム</h2>
+                <h2 class="text-2xl font-bold text-gray-800">ホーム <span id="home-class-name" class="text-gray-400 text-lg ml-2"></span></h2>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="bg-white p-6 rounded shadow border-l-4 border-blue-500">
