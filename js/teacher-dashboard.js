@@ -205,20 +205,11 @@ function loadWhiteboards() {
     wbUnsubscribe = db.collection('classes').doc(currentClassId).collection('active_boards')
         .onSnapshot(snap => {
             list.innerHTML = '';
-            const count = snap.size;
-
-            if (count >= 5) {
-                if(btn) {
-                    btn.disabled = true;
-                    btn.classList.add('opacity-50', 'cursor-not-allowed');
-                    btn.innerText = "上限";
-                }
-            } else {
-                if(btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
-                    btn.innerText = "作成";
-                }
+            // UNLIMITED: Removed count check
+            if(btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                btn.innerText = "作成";
             }
 
             if (snap.empty) {
@@ -287,12 +278,31 @@ async function loadDailyRecords() {
         const time = d.createdAt ? d.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--';
         const moodIcon = d.mood === 'good' ? '😊' : d.mood === 'bad' ? '😫' : '😐';
 
-        // Temperature check
-        let tempClass = "";
-        if (d.temperature > 37.5) tempClass = "text-red-600 font-bold";
+        // Abnormality check
+        const isAbnormal = (d.temperature > 37.5) || (d.mood === 'bad');
+        let rowClass = isAbnormal ? "bg-red-50 border-l-4 border-red-500" : "";
+        let tempClass = d.temperature > 37.5 ? "text-red-600 font-bold" : "";
 
         const tr = document.createElement('tr');
+        tr.className = `relative group ${rowClass}`;
+
+        // Tooltip logic for abnormal rows
+        let tooltip = '';
+        if (isAbnormal) {
+            const notifiedText = d.adminNotified ? '<span class="text-green-600 font-bold text-xs ml-2">通知済み</span>' : '';
+            const notifyBtn = !d.adminNotified ? `<button onclick="notifyAdmin('${doc.id}')" class="bg-red-600 text-white text-xs px-2 py-1 rounded hover:bg-red-700 ml-2">管理者に通知</button>` : '';
+
+            tooltip = `
+                <div class="hidden group-hover:block absolute top-0 left-0 w-full h-full bg-white bg-opacity-95 flex items-center justify-center space-x-4 z-10 p-2 shadow-inner">
+                    <span class="font-bold text-red-600">⚠️ 要対応: 保健室へ誘導してください</span>
+                    ${notifyBtn}
+                    ${notifiedText}
+                </div>
+            `;
+        }
+
         tr.innerHTML = `
+            ${tooltip}
             <td class="p-3 font-bold">${d.studentName || '不明'}</td>
             <td class="p-3 text-2xl">${moodIcon}</td>
             <td class="p-3 ${tempClass}">${d.temperature}℃</td>
@@ -301,6 +311,21 @@ async function loadDailyRecords() {
         `;
         list.appendChild(tr);
     });
+}
+
+async function notifyAdmin(recordId) {
+    if(!confirm("管理者にこの生徒の体調不良を通知しますか？")) return;
+    try {
+        await db.collection('daily_records').doc(recordId).update({
+            adminNotified: true,
+            notifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        loadDailyRecords(); // Refresh
+        alert("管理者に通知しました");
+    } catch(e) {
+        console.error(e);
+        alert("通知に失敗しました");
+    }
 }
 
 
