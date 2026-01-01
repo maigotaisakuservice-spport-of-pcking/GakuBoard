@@ -124,17 +124,26 @@
                 initTeacher(user);
                 document.getElementById('studentDrawToggle').style.display = 'block';
 
+                // Check AI Config
+                db.collection('users').doc(user.uid).get().then(doc => {
+                    const tenantId = doc.data().tenantId;
+                    AIService.getConfig(tenantId).then(config => {
+                        if(!config.enabled) {
+                            const btn = document.getElementById('aiPenBtn');
+                            if(btn) btn.style.display = 'none';
+                        }
+                    }).catch(e => {
+                        const btn = document.getElementById('aiPenBtn');
+                        if(btn) btn.style.display = 'none';
+                    });
+                });
+
                 // Cleanup on exit
                 window.addEventListener('beforeunload', () => {
                      db.collection('classes').doc(classId).collection('active_boards').doc(boardId).delete();
                 });
             } else {
                 initStudent(user);
-                document.getElementById('aiPenBtn').style.display = 'none'; // AI Pen for teacher only usually? Or allowed for students?
-                // Logic: Student sends stroke, teacher's AI processes? No, student is client.
-                // Let's hide AI pen for students for simplicity, or allow it if configured.
-                // Requirement said "Tenant Admin enables it". If enabled, everyone can use it?
-                // Let's assume Teacher tool for now to save API costs.
                 document.getElementById('aiPenBtn').remove();
             }
         });

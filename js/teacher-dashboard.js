@@ -33,6 +33,19 @@ auth.onAuthStateChanged(async user => {
             // 3. Initial Load
             document.getElementById('loading').classList.add('hidden');
 
+            // Check AI Config and toggle button visibility
+            try {
+                const aiConfig = await AIService.getConfig(data.tenantId);
+                const aiBtn = document.getElementById('btn-ai-draft');
+                if (!aiConfig.enabled) {
+                    if(aiBtn) aiBtn.style.display = 'none';
+                }
+            } catch(e) {
+                console.warn("AI check failed", e);
+                const aiBtn = document.getElementById('btn-ai-draft');
+                if(aiBtn) aiBtn.style.display = 'none';
+            }
+
             // Set date picker to today
             const dp = document.getElementById('daily-date-picker');
             if(dp) dp.valueAsDate = new Date();
