@@ -57,7 +57,9 @@ service cloud.firestore {
 
       // AI Configuration (Private: API Keys)
       match /private_config/ai {
-          allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || hasRole('school_admin') || hasRole('teacher');
+          // Strictly check tenantId for all roles to prevent cross-tenant access
+          allow read: if isSuperAdmin()
+                      || (isTenantMember(tenantId) && (hasRole('tenant_admin') || hasRole('school_admin') || hasRole('teacher')));
           allow write: if isSuperAdmin();
       }
     }
