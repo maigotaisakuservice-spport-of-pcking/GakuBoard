@@ -12,6 +12,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="js/firebase-config.js"></script>
     <script src="js/firebase-init.js"></script>
+    <script src="js/ai-service.js"></script>
 
     <!-- PeerJS -->
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
@@ -37,6 +38,7 @@
             padding: 5px 10px; border-radius: 3px; cursor: pointer;
         }
         .btn-tool.active { background: #2ecc71; border-color: #27ae60; }
+        .btn-tool.ai-active { background: #8e44ad; border-color: #9b59b6; }
 
         #statusDisplay { font-size: 0.8em; color: #bbb; }
         .color-picker { width: 30px; height: 30px; padding: 0; border: none; }
@@ -53,6 +55,7 @@
 
         <div class="tool-group">
             <button class="btn-tool active" id="penBtn" onclick="setTool('pen')"><i class="fas fa-pen"></i></button>
+            <button class="btn-tool" id="aiPenBtn" onclick="setTool('ai_pen')" title="AI Magic Pen"><i class="fas fa-magic"></i></button>
             <button class="btn-tool" id="eraserBtn" onclick="setTool('eraser')"><i class="fas fa-eraser"></i></button>
             <input type="color" id="colorPicker" class="color-picker" value="#000000" onchange="setColor(this.value)">
             <button class="btn-tool" onclick="clearBoard()"><i class="fas fa-trash"></i></button>
@@ -78,11 +81,6 @@
         const boardName = params.get('name') || 'Whiteboard';
         const mode = params.get('mode'); // 'teacher' or 'student'
 
-        // Peer Logic: Host ID based on boardId
-        // Using a deterministic ID for Host makes it easier for students to connect without looking up Firestore again for PeerID (though we use Firestore for metadata)
-        // But PeerJS IDs must be unique globally? Prefix with app name.
-        // Let's rely on Firestore metadata to get Host Peer ID to be safe.
-
         // Canvas Setup
         const canvas = document.getElementById('whiteboard');
         const ctx = canvas.getContext('2d');
@@ -92,6 +90,10 @@
         let currentTool = 'pen';
         let currentColor = '#000000';
         let currentWidth = 2;
+
+        // AI Pen State
+        let aiStrokePoints = [];
+        let aiProcessing = false;
 
         // P2P State
         let peer;
@@ -128,6 +130,12 @@
                 });
             } else {
                 initStudent(user);
+                document.getElementById('aiPenBtn').style.display = 'none'; // AI Pen for teacher only usually? Or allowed for students?
+                // Logic: Student sends stroke, teacher's AI processes? No, student is client.
+                // Let's hide AI pen for students for simplicity, or allow it if configured.
+                // Requirement said "Tenant Admin enables it". If enabled, everyone can use it?
+                // Let's assume Teacher tool for now to save API costs.
+                document.getElementById('aiPenBtn').remove();
             }
         });
 
@@ -160,10 +168,9 @@
                 connections.push(conn);
 
                 conn.on('data', (data) => {
-                    if (data.type === 'draw') {
-                        drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width);
-                        broadcast(data, conn.peer);
-                    }
+                    handleData(data);
+                    // Relay to others if teacher
+                    broadcast(data, conn.peer);
                 });
 
                 conn.on('close', () => {
@@ -228,12 +235,21 @@
             });
 
             conn.on('data', (data) => {
-                if (data.type === 'draw') {
-                    drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width);
-                } else if (data.type === 'clear') {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                }
+                handleData(data);
             });
+        }
+
+        function handleData(data) {
+            if (data.type === 'draw') {
+                drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width);
+            } else if (data.type === 'clear') {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            } else if (data.type === 'erase_area') {
+                ctx.fillStyle = 'white';
+                ctx.fillRect(data.x, data.y, data.w, data.h);
+            } else if (data.type === 'shape') {
+                drawShapeLocal(data);
+            }
         }
 
         // ------------------
@@ -259,6 +275,11 @@
             const pos = getPos(e);
             lastX = pos.x;
             lastY = pos.y;
+
+            if(currentTool === 'ai_pen') {
+                aiStrokePoints = [{x: lastX, y: lastY}];
+            }
+
             e.preventDefault();
         }
 
@@ -267,28 +288,154 @@
             e.preventDefault();
             const pos = getPos(e);
 
+            // Draw locally
             drawOnCanvas(lastX, lastY, pos.x, pos.y, currentColor, currentWidth);
 
-            const data = {
-                type: 'draw',
-                x0: lastX, y0: lastY,
-                x1: pos.x, y1: pos.y,
-                color: currentColor,
-                width: currentWidth
-            };
-
-            if (mode === 'teacher') {
-                broadcast(data);
+            // Broadcast if normal pen
+            if(currentTool !== 'ai_pen') {
+                const data = {
+                    type: 'draw',
+                    x0: lastX, y0: lastY,
+                    x1: pos.x, y1: pos.y,
+                    color: currentColor,
+                    width: currentWidth
+                };
+                if (mode === 'teacher') broadcast(data);
+                else if (connections.length > 0) connections[0].send(data);
             } else {
-                if (connections.length > 0) connections[0].send(data);
+                // AI Pen: Just accumulate points, assume visual feedback is local for now.
+                // Or we can broadcast rough stroke too? Let's just broadcast rough stroke so others see it.
+                // Then on mouseup we replace it.
+                const data = {
+                    type: 'draw',
+                    x0: lastX, y0: lastY,
+                    x1: pos.x, y1: pos.y,
+                    color: currentColor,
+                    width: currentWidth
+                };
+                if (mode === 'teacher') broadcast(data); // Send rough stroke
+                aiStrokePoints.push({x: pos.x, y: pos.y});
             }
 
             lastX = pos.x;
             lastY = pos.y;
         }
 
-        function endDraw(e) {
+        async function endDraw(e) {
             drawing = false;
+            if(currentTool === 'ai_pen' && aiStrokePoints.length > 10) {
+                // Process AI
+                await processAIShape();
+            }
+            aiStrokePoints = [];
+        }
+
+        async function processAIShape() {
+            if(aiProcessing) return;
+            aiProcessing = true;
+            document.getElementById('statusDisplay').textContent = "AI Processing...";
+
+            // 1. Capture Bounding Box of Stroke
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            aiStrokePoints.forEach(p => {
+                if(p.x < minX) minX = p.x;
+                if(p.y < minY) minY = p.y;
+                if(p.x > maxX) maxX = p.x;
+                if(p.y > maxY) maxY = p.y;
+            });
+
+            // Add padding
+            const pad = 20;
+            minX = Math.max(0, minX - pad);
+            minY = Math.max(0, minY - pad);
+            maxX = Math.min(canvas.width, maxX + pad);
+            maxY = Math.min(canvas.height, maxY + pad);
+            const w = maxX - minX;
+            const h = maxY - minY;
+
+            if(w <= 0 || h <= 0) { aiProcessing = false; return; }
+
+            // 2. Extract Image Data
+            const imgData = ctx.getImageData(minX, minY, w, h);
+
+            // Convert to Base64 (Using temp canvas)
+            const tCanvas = document.createElement('canvas');
+            tCanvas.width = w;
+            tCanvas.height = h;
+            const tCtx = tCanvas.getContext('2d');
+            tCtx.putImageData(imgData, 0, 0);
+            const dataUrl = tCanvas.toDataURL('image/png');
+            const base64 = dataUrl.split(',')[1];
+
+            // 3. Call AI
+            try {
+                // Need tenantId. Get from user doc? Or pass in params?
+                // We are in whiteboard context, auth.currentUser is available.
+                const user = auth.currentUser;
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                const tenantId = userDoc.data().tenantId;
+
+                const result = await AIService.recognizeShape(tenantId, base64);
+                console.log("AI Shape:", result);
+
+                if (result.shape && result.shape !== 'unknown') {
+                    // 4. Erase Rough Stroke (Broadcast Erase Area)
+                    // We simply clear the area (simple approach) or draw white box?
+                    // ClearRect is dangerous if overlapping other things.
+                    // Better: Draw a white rectangle over the bounding box to "erase".
+                    // (Assuming white background).
+
+                    const eraseData = { type: 'erase_area', x: minX, y: minY, w: w, h: h };
+                    if (mode === 'teacher') broadcast(eraseData);
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(minX, minY, w, h);
+
+                    // 5. Draw Perfect Shape
+                    // Result coords are 0-1 relative to the snippet.
+                    // Map back to canvas coords.
+                    const finalX = minX + (result.x * w);
+                    const finalY = minY + (result.y * h);
+                    const finalW = result.width * w;
+                    const finalH = result.height * h; // Note: if circle, might be r
+
+                    const shapeData = {
+                        type: 'shape',
+                        shape: result.shape,
+                        x: finalX, y: finalY, w: finalW, h: finalH,
+                        color: currentColor
+                    };
+
+                    if (mode === 'teacher') broadcast(shapeData);
+                    drawShapeLocal(shapeData);
+                }
+            } catch(e) {
+                console.error(e);
+            } finally {
+                aiProcessing = false;
+                document.getElementById('statusDisplay').textContent = "Online";
+            }
+        }
+
+        function drawShapeLocal(d) {
+             ctx.beginPath();
+             ctx.strokeStyle = d.color;
+             ctx.lineWidth = 3;
+
+             if (d.shape.toLowerCase() === 'rectangle' || d.shape.toLowerCase() === 'square') {
+                 ctx.rect(d.x, d.y, d.w, d.h);
+             } else if (d.shape.toLowerCase() === 'circle') {
+                 ctx.arc(d.x + d.w/2, d.y + d.h/2, d.w/2, 0, 2*Math.PI);
+             } else if (d.shape.toLowerCase() === 'triangle') {
+                 ctx.moveTo(d.x + d.w/2, d.y);
+                 ctx.lineTo(d.x + d.w, d.y + d.h);
+                 ctx.lineTo(d.x, d.y + d.h);
+                 ctx.closePath();
+             } else if (d.shape.toLowerCase() === 'line') {
+                 ctx.moveTo(d.x, d.y);
+                 ctx.lineTo(d.x + d.w, d.y + d.h);
+             }
+
+             ctx.stroke();
         }
 
         function drawOnCanvas(x0, y0, x1, y1, color, width) {
@@ -312,12 +459,16 @@
 
         function setTool(tool) {
             currentTool = tool;
-            document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active', 'ai-active'));
+
             if(tool === 'pen') {
                 document.getElementById('penBtn').classList.add('active');
                 currentColor = document.getElementById('colorPicker').value;
                 currentWidth = 2;
-                ctx.globalCompositeOperation = 'source-over';
+            } else if (tool === 'ai_pen') {
+                document.getElementById('aiPenBtn').classList.add('active', 'ai-active');
+                currentColor = document.getElementById('colorPicker').value;
+                currentWidth = 2;
             } else {
                 document.getElementById('eraserBtn').classList.add('active');
                 currentColor = '#ffffff';

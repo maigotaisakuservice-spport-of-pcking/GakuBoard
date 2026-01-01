@@ -53,7 +53,13 @@ service cloud.firestore {
 
     match /tenants/{tenantId} {
       allow read: if isAuthenticated();
-      allow write: if isSuperAdmin();
+      allow write: if isSuperAdmin() || isTenantAdmin(tenantId);
+
+      // AI Configuration (Private: API Keys)
+      match /private_config/ai {
+          allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || hasRole('school_admin') || hasRole('teacher');
+          allow write: if isSuperAdmin();
+      }
     }
 
     match /schools/{schoolId} {

@@ -11,6 +11,7 @@
     <script src="js/firebase-init.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/profile-setup.js"></script>
+    <script src="js/ai-service.js"></script>
 </head>
 <body class="bg-gray-50 h-screen flex overflow-hidden">
 
@@ -141,7 +142,10 @@
                 <h2 class="text-2xl font-bold text-gray-800">お知らせ配信</h2>
                 <div class="bg-white p-6 rounded shadow">
                     <input type="text" id="announce-title" placeholder="件名" class="w-full border p-2 rounded mb-2 font-bold">
-                    <textarea id="announce-body" placeholder="本文" class="w-full border p-2 rounded mb-2 h-32"></textarea>
+                    <div class="relative">
+                        <textarea id="announce-body" placeholder="本文" class="w-full border p-2 rounded mb-2 h-32"></textarea>
+                        <button onclick="draftAnnouncementWithAI()" id="btn-ai-draft" class="absolute bottom-4 right-2 bg-indigo-500 text-white text-xs px-2 py-1 rounded hover:bg-indigo-600 opacity-90 shadow">🤖 AI下書き</button>
+                    </div>
                     <button onclick="postAnnouncement()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">送信</button>
                 </div>
 

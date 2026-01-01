@@ -411,6 +411,30 @@ async function loadAnnouncements() {
     });
 }
 
+async function draftAnnouncementWithAI() {
+    if (!currentUser) return;
+    const userDoc = await db.collection('users').doc(currentUser.uid).get();
+    const tenantId = userDoc.data().tenantId;
+
+    const topic = prompt("お知らせのトピックやキーワードを入力してください (例: 来週の遠足の持ち物について)");
+    if (!topic) return;
+
+    const btn = document.getElementById('btn-ai-draft');
+    const originalText = btn.textContent;
+    btn.textContent = "AI生成中...";
+    btn.disabled = true;
+
+    try {
+        const draft = await AIService.draftAnnouncement(tenantId, topic);
+        document.getElementById('announce-body').value = draft;
+    } catch(e) {
+        alert("AI生成エラー: " + e.message);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
 async function postAnnouncement() {
     const title = document.getElementById('announce-title').value;
     const body = document.getElementById('announce-body').value;

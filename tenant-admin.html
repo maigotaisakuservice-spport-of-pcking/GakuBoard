@@ -27,8 +27,14 @@
 
         <!-- TAB: SCHOOL MANAGEMENT -->
         <div id="content-school">
-            <div id="tenant-info" class="mb-8 p-4 bg-white rounded shadow">
+            <div id="tenant-info" class="mb-8 p-4 bg-white rounded shadow flex justify-between items-center">
                 <h2 class="text-xl font-bold text-gray-800">読み込み中...</h2>
+
+                <!-- AI Toggle for Tenant Admin -->
+                <div id="ai-toggle-container" class="hidden flex items-center bg-gray-50 px-4 py-2 rounded border">
+                     <span class="font-bold text-gray-700 mr-3">AI機能 (全校):</span>
+                     <button id="btn-ai-toggle" onclick="toggleTenantAI()" class="bg-gray-400 text-white px-3 py-1 rounded text-sm font-bold">OFF</button>
+                </div>
             </div>
 
             <!-- Create School Section -->
@@ -144,7 +150,45 @@
         async function loadTenantInfo() {
             const doc = await db.collection('tenants').doc(currentTenantId).get();
             if (doc.exists) {
-                document.querySelector('#tenant-info h2').textContent = `テナント: ${doc.data().name}`;
+                const data = doc.data();
+                document.querySelector('#tenant-info h2').textContent = `テナント: ${data.name}`;
+
+                // AI Settings check
+                if (data.aiSettings && data.aiSettings.contractEnabled) {
+                    const container = document.getElementById('ai-toggle-container');
+                    container.classList.remove('hidden');
+
+                    const isUsageOn = data.aiSettings.usageEnabled === true;
+                    updateAIToggleUI(isUsageOn);
+                }
+            }
+        }
+
+        function updateAIToggleUI(isOn) {
+            const btn = document.getElementById('btn-ai-toggle');
+            if(isOn) {
+                btn.textContent = "ON";
+                btn.className = "bg-indigo-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-indigo-700";
+            } else {
+                btn.textContent = "OFF";
+                btn.className = "bg-gray-400 text-white px-3 py-1 rounded text-sm font-bold hover:bg-gray-500";
+            }
+        }
+
+        async function toggleTenantAI() {
+            const btn = document.getElementById('btn-ai-toggle');
+            const currentState = btn.textContent === "ON";
+            const newState = !currentState;
+
+            try {
+                await db.collection('tenants').doc(currentTenantId).set({
+                    aiSettings: {
+                        usageEnabled: newState
+                    }
+                }, { merge: true });
+                updateAIToggleUI(newState);
+            } catch(e) {
+                alert("更新失敗: " + e.message);
             }
         }
 

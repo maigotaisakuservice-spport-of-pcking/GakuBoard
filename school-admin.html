@@ -11,6 +11,7 @@
     <script src="js/firebase-init.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/admin-utils.js"></script>
+    <script src="js/ai-service.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <nav class="bg-green-700 text-white p-4 flex justify-between items-center">
@@ -120,7 +121,12 @@
         <!-- TAB: ALERTS -->
         <div id="content-alerts" class="hidden">
             <div class="bg-white p-6 rounded shadow mb-8 border-l-4 border-red-500">
-                <h2 class="text-2xl font-bold text-red-700 mb-4">要確認・体調不良者リスト</h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-red-700">要確認・体調不良者リスト</h2>
+                    <button onclick="analyzeRiskWithAI()" id="btn-ai-analyze" class="bg-indigo-600 text-white px-4 py-2 rounded shadow hover:bg-indigo-700 flex items-center gap-2">
+                        <span>🧠</span> AIリスク分析 (SOS検知)
+                    </button>
+                </div>
                 <p class="mb-4 text-sm text-gray-600">37.5℃以上、または気分が優れない生徒、および先生から通知された生徒が表示されます。(直近24時間)</p>
 
                 <table class="min-w-full text-sm">
@@ -553,6 +559,66 @@
             } catch (e) {
                 console.error(e);
                 list.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-red-500">読み込みエラー</td></tr>';
+            }
+        }
+
+        async function analyzeRiskWithAI() {
+            const list = document.getElementById('alert-list');
+            // Gather text from current view (Simplification: fetch fresh data to ensure we have full context)
+            // Or just fetch again.
+
+            const btn = document.getElementById('btn-ai-analyze');
+            btn.disabled = true;
+            btn.textContent = "分析中...";
+
+            try {
+                // Fetch recent records (limit 20 for AI quota safety)
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+
+                const snap = await db.collection('daily_records')
+                    .where('schoolId', '==', currentSchoolId)
+                    .where('createdAt', '>=', yesterday)
+                    .orderBy('createdAt', 'desc')
+                    .limit(20)
+                    .get();
+
+                let textData = "";
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    if(d.comment && d.comment.length > 0) {
+                        textData += `- Student: ${d.studentName}, Comment: "${d.comment}"\n`;
+                    }
+                });
+
+                if(!textData) {
+                    alert("分析対象のコメントがありません");
+                    return;
+                }
+
+                const result = await AIService.analyzeDailyRecords(currentTenantId, textData);
+
+                // Show Result (Simple Alert or Modal for now)
+                console.log(result);
+
+                let message = "AI分析結果:\n\n";
+                if(result.analysis && result.analysis.length > 0) {
+                    result.analysis.forEach(item => {
+                        if(item.score >= 3) {
+                            message += `⚠️ ${item.studentName} (スコア: ${item.score})\n理由: ${item.reason}\n\n`;
+                        }
+                    });
+                }
+
+                if(message === "AI分析結果:\n\n") message += "緊急性の高いSOSは検出されませんでした。";
+
+                alert(message);
+
+            } catch(e) {
+                alert("AI分析エラー: " + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "🧠 AIリスク分析 (SOS検知)";
             }
         }
     </script>
