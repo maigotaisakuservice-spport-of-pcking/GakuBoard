@@ -50,6 +50,12 @@ auth.onAuthStateChanged(async user => {
             const dp = document.getElementById('daily-date-picker');
             if(dp) dp.valueAsDate = new Date();
 
+            const homeDp = document.getElementById('home-absent-date');
+            if(homeDp) {
+                homeDp.valueAsDate = new Date();
+                homeDp.onchange = loadAbsenteesWidget;
+            }
+
             // Clean old logs
             if(typeof cleanOldLogs === 'function') cleanOldLogs(db);
 
@@ -183,24 +189,72 @@ async function loadHomeStats() {
 
 async function loadAbsenteesWidget() {
     if (!currentClassId) return;
-    const widget = document.getElementById('home-absentees');
-    if(!widget) return;
+    const widget = document.getElementById('home-stats'); // Correct ID from HTML is home-stats, but content seems to be count?
+    // Wait, the previous code in HTML had "home-stats" for the whole card content?
+    // Actually the HTML structure in step 1 was:
+    // <div id="home-stats">...</div>
+    // But loadHomeStats() updates #home-stats with "XX人 本日の健康観察...".
+    // AND loadAbsenteesWidget() tries to update #home-absentees?
+    // Checking HTML again...
 
-    widget.innerHTML = '<p class="text-gray-400 text-sm">読み込み中...</p>';
+    // In teacher-dashboard.html (from read_file in Step 1):
+    // <div class="bg-white p-6 rounded shadow border-l-4 border-yellow-500">
+    //     ...
+    //     <div id="home-stats"> ... </div>
+    // </div>
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    // There is NO #home-absentees in the HTML.
+    // The previous code for `loadAbsenteesWidget` was searching for `home-absentees` which likely didn't exist, so it returned early?
+    // Or maybe I am supposed to create it.
+    // The `loadHomeStats` function writes into `home-stats`.
+
+    // The requirements: "Today's Absentees" widget.
+    // I should probably split `home-stats` or append to it.
+    // Or maybe `loadHomeStats` is one thing (daily records count) and there should be another widget.
+    // Let's look at the HTML structure again.
+
+    // <div class="bg-white p-6 rounded shadow border-l-4 border-yellow-500">
+    //     <h3 ...>今日のクラス状況</h3>
+    //     <div id="home-stats">...</div>
+    // </div>
+
+    // I should probably REPLACE `home-stats` content with both the Count AND the Absentees List.
+    // Or create a new container.
+    // I will target `home-stats` and append the list below the count.
+
+    const container = document.getElementById('home-stats');
+    if(!container) return;
+
+    // We don't want to overwrite the "Daily Record Count" if `loadHomeStats` runs.
+    // But `loadHomeStats` replaces innerHTML.
+    // Let's make `loadAbsenteesWidget` create/update a specific child div if possible, or merge them.
+    // Simplest is to have separate divs in HTML.
+    // I will dynamically create a div for absentees if it doesn't exist.
+
+    let absenteeListDiv = document.getElementById('absentee-list-div');
+    if (!absenteeListDiv) {
+        absenteeListDiv = document.createElement('div');
+        absenteeListDiv.id = 'absentee-list-div';
+        absenteeListDiv.className = "mt-4 border-t pt-4";
+        container.appendChild(absenteeListDiv);
+    }
+
+    absenteeListDiv.innerHTML = '<p class="text-gray-400 text-sm">読み込み中...</p>';
+
+    const dateInput = document.getElementById('home-absent-date');
+    const dateStr = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
 
     const snap = await db.collection('attendance')
         .where('classId', '==', currentClassId)
-        .where('date', '==', todayStr)
+        .where('date', '==', dateStr)
         .get();
 
     if(snap.empty) {
-        widget.innerHTML = '<p class="text-gray-500 text-sm">本日の連絡はありません</p>';
+        absenteeListDiv.innerHTML = '<p class="text-gray-500 text-sm">欠席・遅刻の連絡はありません</p>';
         return;
     }
 
-    let html = '<ul class="space-y-2">';
+    let html = '<h4 class="font-bold text-sm text-gray-600 mb-2">欠席・遅刻など</h4><ul class="space-y-2">';
     snap.forEach(doc => {
         const d = doc.data();
         let badgeColor = 'bg-gray-500';
@@ -220,7 +274,7 @@ async function loadAbsenteesWidget() {
         `;
     });
     html += '</ul>';
-    widget.innerHTML = html;
+    absenteeListDiv.innerHTML = html;
 }
 
 function launchActivity(type) {
@@ -508,7 +562,15 @@ async function loadStudentList() {
         .where('role', '==', 'student')
         .get();
 
-    tbody.innerHTML = '';
+    // Pre-fetch all club names in the school to resolve IDs easily
+    const clubMap = {};
+    try {
+        const clubSnap = await db.collection('classes').where('schoolId', '==', schoolId).where('type', '==', 'club').get();
+        clubSnap.forEach(c => clubMap[c.id] = c.data().name);
+    } catch(e) {
+        console.warn("Error fetching clubs", e);
+    }
+
     const students = [];
 
     snap.forEach(doc => {
@@ -529,14 +591,29 @@ async function loadStudentList() {
 
     students.sort((a,b) => (a.attendanceNumber || 999) - (b.attendanceNumber || 999));
 
+    tbody.innerHTML = '';
     students.forEach(s => {
+        const count = absentCounts[s.id] || 0;
+
+        // Resolve Clubs
+        const clubNames = [];
+        if(s.affiliations) {
+            s.affiliations.forEach(aff => {
+                // If the affiliation is in our clubMap, add name
+                if(clubMap[aff.classId]) {
+                    clubNames.push(clubMap[aff.classId]);
+                }
+            });
+        }
+        const clubStr = clubNames.length > 0 ? clubNames.join(', ') : '-';
+
         const tr = document.createElement('tr');
         tr.className = "border-b hover:bg-gray-50";
         tr.innerHTML = `
             <td class="p-3 text-center">${s.attendanceNumber || '-'}</td>
             <td class="p-3 font-bold">${s.name}</td>
-            <td class="p-3 text-sm text-gray-600">${s.email}</td>
-            <td class="p-3 text-center text-xs text-gray-400">欠席: -</td>
+            <td class="p-3 text-sm text-gray-600">${clubStr}</td>
+            <td class="p-3 text-center text-xs text-gray-400 font-bold">${count > 0 ? count + '回' : '-'}</td>
             <td class="p-3 text-center">
                 <button onclick="editStudent('${s.id}', '${s.name}', '${s.attendanceNumber||''}')" class="bg-gray-200 px-2 py-1 rounded text-xs hover:bg-gray-300">編集</button>
             </td>
