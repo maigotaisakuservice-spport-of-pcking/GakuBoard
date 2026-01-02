@@ -10,7 +10,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     <script src="js/firebase-config.js"></script>
     <script src="js/firebase-init.js"></script>
     <script src="js/ai-service.js"></script>
@@ -287,24 +286,10 @@
 
             document.getElementById('statusDisplay').textContent = "Processing...";
 
-            // 1. Capture Image
+            // 1. Capture Image (Base64)
             const dataUrl = canvas.toDataURL('image/png');
 
-            // 2. Upload to Firebase Storage (if available) or Fallback
-            let imageUrl = null;
-            try {
-                if (firebase.storage) {
-                    document.getElementById('statusDisplay').textContent = "Uploading Image...";
-                    const ref = firebase.storage().ref().child(`whiteboards/${classId}/${Date.now()}.png`);
-                    const snapshot = await ref.putString(dataUrl, 'data_url');
-                    imageUrl = await snapshot.ref.getDownloadURL();
-                    console.log("Image uploaded:", imageUrl);
-                }
-            } catch(e) {
-                console.warn("Storage upload failed, falling back to local download only", e);
-            }
-
-            // 3. Download Local Copy (Always safe)
+            // 2. Download Local Copy (Always safe)
             const a = document.createElement('a');
             a.href = dataUrl;
             a.download = `whiteboard_${new Date().toISOString()}.png`;
@@ -312,48 +297,46 @@
             a.click();
             document.body.removeChild(a);
 
-            // 4. Webhook
+            // 3. Webhook (Base64)
             const webhookUrl = document.getElementById('webhook-url').value;
             if(webhookUrl) {
                 document.getElementById('statusDisplay').textContent = "Sending Webhook...";
                 try {
-                    let payload;
-
-                    if (imageUrl) {
-                        // Adaptive Card with Image
-                        payload = {
-                            "type": "message",
-                            "attachments": [
-                                {
-                                    "contentType": "application/vnd.microsoft.card.adaptive",
-                                    "contentUrl": null,
-                                    "content": {
-                                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                                        "type": "AdaptiveCard",
-                                        "version": "1.2",
-                                        "body": [
-                                            {
-                                                "type": "TextBlock",
-                                                "text": `[GAKU-Board] ホワイトボード「${decodeURIComponent(boardName)}」が終了しました`,
-                                                "size": "Medium",
-                                                "weight": "Bolder"
-                                            },
-                                            {
-                                                "type": "Image",
-                                                "url": imageUrl,
-                                                "size": "Large"
-                                            }
-                                        ]
-                                    }
+                    // Try sending Base64 via Adaptive Card
+                    const payload = {
+                        "type": "message",
+                        "attachments": [
+                            {
+                                "contentType": "application/vnd.microsoft.card.adaptive",
+                                "contentUrl": null,
+                                "content": {
+                                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                                    "type": "AdaptiveCard",
+                                    "version": "1.2",
+                                    "body": [
+                                        {
+                                            "type": "TextBlock",
+                                            "text": `[GAKU-Board] ホワイトボード「${decodeURIComponent(boardName)}」が終了しました`,
+                                            "size": "Medium",
+                                            "weight": "Bolder"
+                                        },
+                                        {
+                                            "type": "TextBlock",
+                                            "text": "※画像が表示されない場合は、端末に保存されたファイルをご確認ください。",
+                                            "size": "Small",
+                                            "color": "Attention",
+                                            "wrap": true
+                                        },
+                                        {
+                                            "type": "Image",
+                                            "url": dataUrl,
+                                            "size": "Large"
+                                        }
+                                    ]
                                 }
-                            ]
-                        };
-                    } else {
-                        // Text Only
-                        payload = {
-                            text: `[GAKU-Board] ホワイトボード「${decodeURIComponent(boardName)}」が終了しました。\n画像は先生の端末に保存されました。`
-                        };
-                    }
+                            }
+                        ]
+                    };
 
                     await fetch(webhookUrl, {
                         method: 'POST',
@@ -365,7 +348,7 @@
                     alert("Webhookへ送信しました");
                 } catch(e) {
                     console.error(e);
-                    alert("Webhook送信に失敗しました");
+                    alert("Webhook送信に失敗しました (サイズ制限等の可能性があります)");
                 }
             }
 
