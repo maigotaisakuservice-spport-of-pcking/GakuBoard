@@ -124,29 +124,21 @@
 
                 // Connect to Presenter if it's not me
                 if (data.presenterPeerId && data.presenterPeerId !== peer.id && data.isPresenting) {
-                    if (currentCall && currentCall.peer === data.presenterPeerId) return; // Already connected
+                    // Check if already connected or calling
+                    if (currentCall && currentCall.peer === data.presenterPeerId && currentCall.open) return;
 
-                    // Close existing call
-                    if (currentCall) currentCall.close();
+                    console.log("Requesting stream from presenter:", data.presenterPeerId);
 
-                    console.log("Connecting to presenter:", data.presenterPeerId);
-                    const conn = peer.connect(data.presenterPeerId);
-                    // Actually we need to 'call' to get stream?
-                    // No, usually Presenter calls Viewers (Broadcast) OR Viewers call Presenter (Mesh/SFU).
-                    // PeerJS standard: Caller provides stream? Or Caller requests stream?
-                    // PeerJS: `peer.call(id, stream)` -> Sender calls Receiver.
-                    // So Presenter must call everyone? That's O(N) upload bandwidth.
-                    // Better: Viewer calls Presenter? `peer.call(id, localStream)`. But Viewer has no stream.
-                    // PeerJS doesn't support "pull" stream easily without dummy stream.
+                    // Establish Data Connection to request stream
+                    // Wait a bit to ensure peer is ready?
+                    setTimeout(() => {
+                        const con = peer.connect(data.presenterPeerId);
+                        con.on('open', () => {
+                            con.send({ type: 'request_stream', peerId: peer.id });
+                        });
+                        con.on('error', e => console.error("Connection error:", e));
+                    }, 1000);
 
-                    // Alternative: Presenter updates Firestore.
-                    // Viewers see update. Viewers send "Connection" (`peer.connect`).
-                    // Presenter receives connection. Presenter calls them back with stream.
-
-                    const con = peer.connect(data.presenterPeerId);
-                    con.on('open', () => {
-                        con.send({ type: 'request_stream', peerId: peer.id });
-                    });
                 } else if (!data.isPresenting) {
                     closeViewer();
                 }
@@ -167,18 +159,12 @@
         // Cleanup on teacher exit
         if (mode === 'teacher') {
             window.addEventListener('beforeunload', () => {
-                // Try to set isPresenting false. Note: this might not complete in beforeunload.
-                // Navigator.sendBeacon is better but Firestore REST API is complex.
-                // We rely on 'onDisconnect' if using RTDB, but this is Firestore.
-                // Best effort:
+                // Update status to false, but keep doc (Persistent Room)
                 db.collection('activities').doc(activityId).update({ isPresenting: false });
             });
 
-            // Set Presenting True initially? No, only when sharing starts?
-            // User requirement: "Teacher creates the place... when closed, delete".
-            // So if Teacher opens the page, the "Place" is created?
-            // Let's assume the "Session" exists as long as the Teacher has the page open.
-            db.collection('activities').doc(activityId).set({ isPresenting: false }, { merge: true }); // Reset on load
+            // Reset on load (ensure clean state)
+            db.collection('activities').doc(activityId).set({ isPresenting: false }, { merge: true });
         }
 
         function setupUI() {

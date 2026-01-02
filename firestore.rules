@@ -72,7 +72,8 @@ service cloud.firestore {
 
     match /classes/{classId} {
       allow read: if isAuthenticated();
-      allow write: if isSchoolAdmin(resource.data.schoolId) || (resource.data == null && isSchoolAdmin(request.resource.data.schoolId));
+      allow write: if isSchoolAdmin(resource.data.schoolId) || (resource.data == null && isSchoolAdmin(request.resource.data.schoolId))
+                   || isTeacher(classId); // Teachers can update class (add members)
 
       // Active Boards Subcollection
       match /active_boards/{boardId} {
@@ -126,7 +127,14 @@ service cloud.firestore {
                     && request.resource.data.schoolId == resource.data.schoolId
                     && request.resource.data.tenantId == resource.data.tenantId;
 
-      allow write: if isAuthenticated() && (request.auth.uid == userId || hasRole('super_admin') || hasRole('tenant_admin') || hasRole('school_admin'));
+      // Allow write if admin, OR if Teacher updating a student in their school
+      allow write: if isAuthenticated() && (
+          request.auth.uid == userId
+          || hasRole('super_admin')
+          || hasRole('tenant_admin')
+          || hasRole('school_admin')
+          || (hasRole('teacher') && isSchoolMember(resource.data.schoolId) && resource.data.role == 'student')
+      );
     }
 
     // Whitelist
@@ -159,10 +167,10 @@ service cloud.firestore {
       allow delete: if hasRole('super_admin') || hasRole('tenant_admin') || hasRole('school_admin');
     }
 
-    // Portal Links
+    // Portal Links (Added scope support logic implicitly by allowing write, but read is open)
     match /portal_links/{linkId} {
       allow read: if isAuthenticated();
-      allow write: if hasRole('teacher') || hasRole('school_admin');
+      allow write: if hasRole('teacher') || hasRole('school_admin') || hasRole('tenant_admin');
     }
 
     // Announcements
@@ -174,6 +182,21 @@ service cloud.firestore {
     // Activities (ScreenShare signaling etc)
     match /activities/{activityId} {
       allow read, write: if isAuthenticated();
+    }
+
+    // Attendance
+    match /attendance/{attendId} {
+      allow read: if isAuthenticated() && (
+        resource.data.studentId == request.auth.uid ||
+        (hasRole('teacher') && isClassMember(resource.data.classId)) ||
+        (hasRole('school_admin') && isSchoolMember(resource.data.schoolId))
+      );
+      allow create: if isAuthenticated() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.studentId == request.auth.uid ||
+        hasRole('teacher') || hasRole('school_admin')
+      );
+      allow delete: if hasRole('teacher') || hasRole('school_admin');
     }
 
   }

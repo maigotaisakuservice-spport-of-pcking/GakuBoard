@@ -24,6 +24,7 @@
         <!-- Tabs -->
         <div class="flex border-b border-gray-300 mb-6">
             <button onclick="switchTab('manage')" id="tab-manage" class="px-6 py-2 bg-white border-t border-l border-r rounded-t text-green-700 font-bold">クラス・ユーザー管理</button>
+            <button onclick="switchTab('clubs')" id="tab-clubs" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">部活動管理</button>
             <button onclick="switchTab('portal')" id="tab-portal" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">学習ポータル管理 (全体)</button>
             <button onclick="switchTab('alerts')" id="tab-alerts" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white text-red-600">⚠️ 要確認 (健康観察)</button>
         </div>
@@ -36,7 +37,7 @@
         <div id="content-manage">
             <!-- Class Management -->
             <div class="bg-white p-6 rounded shadow mb-8">
-                <h3 class="text-lg font-bold mb-4">クラス管理</h3>
+                <h3 class="text-lg font-bold mb-4">クラス管理 (ホームルーム)</h3>
                 <div class="flex gap-2 mb-4">
                     <input type="text" id="new-class-name" placeholder="クラス名 (例: 1年A組)" class="border p-2 rounded flex-grow">
                     <button onclick="createClass()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">作成</button>
@@ -114,6 +115,46 @@
                         </thead>
                         <tbody id="users-list"></tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: CLUBS (New) -->
+        <div id="content-clubs" class="hidden">
+            <div class="bg-white p-6 rounded shadow mb-8">
+                <h3 class="text-lg font-bold mb-4">部活動管理</h3>
+                <div class="flex gap-2 mb-6">
+                    <input type="text" id="new-club-name" placeholder="部活動名 (例: サッカー部)" class="border p-2 rounded flex-grow">
+                    <button onclick="createClub()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">作成</button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <!-- Club List -->
+                    <div>
+                        <h4 class="font-bold text-gray-600 mb-2">部活一覧</h4>
+                        <ul id="club-list" class="border rounded h-64 overflow-y-auto divide-y"></ul>
+                    </div>
+
+                    <!-- Member Add -->
+                    <div class="border p-4 rounded bg-gray-50">
+                        <h4 class="font-bold text-gray-600 mb-2">部員追加 (一括)</h4>
+                        <div class="mb-2">
+                            <label class="text-xs font-bold">追加先の部活:</label>
+                            <select id="target-club-select" class="w-full border p-1 rounded text-sm mb-2">
+                                <option value="">選択してください</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="text-xs font-bold">対象クラス (絞り込み):</label>
+                            <select id="source-class-select" class="w-full border p-1 rounded text-sm" onchange="loadStudentsForClubAdd()">
+                                <option value="">クラスを選択</option>
+                            </select>
+                        </div>
+                        <div class="h-32 overflow-y-auto border bg-white rounded p-2 mb-2" id="student-checklist">
+                            <p class="text-xs text-gray-400">クラスを選択すると生徒が表示されます</p>
+                        </div>
+                        <button onclick="addMembersToClub()" class="w-full bg-green-600 text-white py-2 rounded text-sm font-bold hover:bg-green-700">選択した生徒を追加</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -202,7 +243,7 @@
 
         // Tab Switching
         function switchTab(tabId) {
-            ['manage', 'portal', 'alerts'].forEach(t => {
+            ['manage', 'clubs', 'portal', 'alerts'].forEach(t => {
                 document.getElementById(`content-${t}`).classList.add('hidden');
                 const btn = document.getElementById(`tab-${t}`);
                 btn.classList.remove('bg-white', 'text-green-700', 'font-bold', 'border-t', 'border-l', 'border-r', 'rounded-t');
@@ -215,6 +256,10 @@
 
             if(tabId === 'portal') loadSchoolPortalLinks();
             if(tabId === 'alerts') loadAlerts();
+            if(tabId === 'clubs') {
+                loadClubs();
+                loadClassesForClub(); // Populate source dropdown
+            }
         }
 
         auth.onAuthStateChanged(async user => {
@@ -280,11 +325,18 @@
             select.innerHTML = '<option value="">所属なし</option>';
             filterSelect.innerHTML = '<option value="">全クラス</option>';
 
-            const snap = await db.collection('classes').where('schoolId', '==', currentSchoolId).get();
+            // Load regular classes only
+            const snap = await db.collection('classes')
+                .where('schoolId', '==', currentSchoolId)
+                .where('type', '==', 'class') // Filter by type if exists, or assume class if no type
+                .get();
+
             const classes = [];
 
             snap.forEach(doc => {
                 const data = doc.data();
+                if(data.type === 'club') return; // Should not happen if query is correct, but safe guard
+
                 classes.push({ id: doc.id, name: data.name });
 
                 const li = document.createElement('li');
@@ -316,6 +368,7 @@
             try {
                 await db.collection('classes').add({
                     name: name,
+                    type: 'class', // Explicit type
                     schoolId: currentSchoolId,
                     tenantId: currentTenantId,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -577,15 +630,11 @@
 
         async function analyzeRiskWithAI() {
             const list = document.getElementById('alert-list');
-            // Gather text from current view (Simplification: fetch fresh data to ensure we have full context)
-            // Or just fetch again.
-
             const btn = document.getElementById('btn-ai-analyze');
             btn.disabled = true;
             btn.textContent = "分析中...";
 
             try {
-                // Fetch recent records (limit 20 for AI quota safety)
                 const yesterday = new Date();
                 yesterday.setDate(yesterday.getDate() - 1);
 
@@ -611,9 +660,6 @@
 
                 const result = await AIService.analyzeDailyRecords(currentTenantId, textData);
 
-                // Show Result (Simple Alert or Modal for now)
-                console.log(result);
-
                 let message = "AI分析結果:\n\n";
                 if(result.analysis && result.analysis.length > 0) {
                     result.analysis.forEach(item => {
@@ -624,7 +670,6 @@
                 }
 
                 if(message === "AI分析結果:\n\n") message += "緊急性の高いSOSは検出されませんでした。";
-
                 alert(message);
 
             } catch(e) {
@@ -632,6 +677,146 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = "🧠 AIリスク分析 (SOS検知)";
+            }
+        }
+
+        // --- Club Management Functions ---
+        async function loadClubs() {
+            const list = document.getElementById('club-list');
+            const targetSelect = document.getElementById('target-club-select');
+            list.innerHTML = '';
+            targetSelect.innerHTML = '<option value="">選択してください</option>';
+
+            const snap = await db.collection('classes')
+                .where('schoolId', '==', currentSchoolId)
+                .where('type', '==', 'club')
+                .get();
+
+            snap.forEach(doc => {
+                const data = doc.data();
+                // List
+                const li = document.createElement('li');
+                li.className = 'p-3 flex justify-between items-center';
+                li.innerHTML = `
+                    <span class="font-bold text-gray-700">${data.name}</span>
+                    <button onclick="deleteClassFull('${doc.id}')" class="text-red-500 text-xs border border-red-500 px-2 py-1 rounded">削除</button>
+                `;
+                list.appendChild(li);
+
+                // Dropdown
+                const opt = document.createElement('option');
+                opt.value = doc.id;
+                opt.textContent = data.name;
+                targetSelect.appendChild(opt);
+            });
+        }
+
+        async function createClub() {
+            const name = document.getElementById('new-club-name').value;
+            if(!name) return;
+            try {
+                await db.collection('classes').add({
+                    name: name,
+                    type: 'club',
+                    schoolId: currentSchoolId,
+                    tenantId: currentTenantId,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                document.getElementById('new-club-name').value = '';
+                loadClubs();
+            } catch(e) {
+                alert("作成失敗: " + e.message);
+            }
+        }
+
+        async function loadClassesForClub() {
+            const select = document.getElementById('source-class-select');
+            select.innerHTML = '<option value="">クラスを選択</option>';
+            if(window.classListCache) {
+                window.classListCache.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    select.appendChild(opt);
+                });
+            }
+        }
+
+        async function loadStudentsForClubAdd() {
+            const classId = document.getElementById('source-class-select').value;
+            const container = document.getElementById('student-checklist');
+            container.innerHTML = '読み込み中...';
+            if(!classId) {
+                container.innerHTML = '<p class="text-xs text-gray-400">クラスを選択してください</p>';
+                return;
+            }
+
+            const snap = await db.collection('users')
+                .where('classId', '==', classId)
+                .where('role', '==', 'student')
+                .get();
+
+            container.innerHTML = '';
+            if(snap.empty) {
+                container.innerHTML = '<p class="text-xs text-gray-400">生徒がいません</p>';
+                return;
+            }
+
+            snap.forEach(doc => {
+                const d = doc.data();
+                const div = document.createElement('div');
+                div.className = "flex items-center space-x-2 mb-1";
+                div.innerHTML = `
+                    <input type="checkbox" value="${doc.id}" class="student-check form-checkbox h-4 w-4 text-blue-600">
+                    <span class="text-sm">${d.name}</span>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function addMembersToClub() {
+            const clubId = document.getElementById('target-club-select').value;
+            if(!clubId) return alert("追加先の部活を選んでください");
+
+            const checks = document.querySelectorAll('.student-check:checked');
+            if(checks.length === 0) return alert("生徒を選んでください");
+
+            if(!confirm(`${checks.length}人の生徒を部活に追加しますか？`)) return;
+
+            const batch = db.batch();
+            const clubRef = db.collection('classes').doc(clubId); // Club is technically a class doc with type=club
+
+            // We need to add clubId to user's 'affiliations' array
+            // affiliations: [{classId: '...', yearType: 'club'}]
+
+            // Note: Reading inside loop is bad for batch, but we need current data.
+            // Better to use arrayUnion if possible, but 'affiliations' is array of objects.
+            // Firestore arrayUnion only works for exact object match.
+            // So we just construct the object.
+
+            const promises = [];
+            checks.forEach(chk => {
+                const uid = chk.value;
+                const ref = db.collection('users').doc(uid);
+
+                // We use arrayUnion with a constructed object
+                const p = ref.update({
+                    affiliations: firebase.firestore.FieldValue.arrayUnion({
+                        classId: clubId,
+                        yearType: 'club' // Distinct from 'current'
+                    })
+                });
+                promises.push(p);
+            });
+
+            try {
+                await Promise.all(promises);
+                alert("追加しました");
+                // Clear checks
+                checks.forEach(c => c.checked = false);
+            } catch(e) {
+                console.error(e);
+                alert("追加中にエラーが発生しました: " + e.message);
             }
         }
     </script>

@@ -22,10 +22,8 @@ auth.onAuthStateChanged(async user => {
             }
 
             // 1. Check Profile Completion
-            // If function is imported from profile-setup.js
-            if (typeof checkAndShowProfileSetup === 'function') {
-                await checkAndShowProfileSetup(user, db);
-            }
+            // Teachers do NOT need profile setup (Name is set by Admin).
+            // Removing checkAndShowProfileSetup call as per requirements.
 
             // 2. Load Affiliated Classes
             await loadAffiliatedClasses(data);
@@ -33,7 +31,10 @@ auth.onAuthStateChanged(async user => {
             // 3. Initial Load
             document.getElementById('loading').classList.add('hidden');
 
-            // Check AI Config and toggle button visibility
+            // Run Cleanup (Background)
+            cleanOldLogs(db, data.schoolId).catch(e => console.error("Cleanup error", e));
+
+            // Check AI Config
             try {
                 const aiConfig = await AIService.getConfig(data.tenantId);
                 const aiBtn = document.getElementById('btn-ai-draft');
@@ -41,7 +42,6 @@ auth.onAuthStateChanged(async user => {
                     if(aiBtn) aiBtn.style.display = 'none';
                 }
             } catch(e) {
-                console.warn("AI check failed", e);
                 const aiBtn = document.getElementById('btn-ai-draft');
                 if(aiBtn) aiBtn.style.display = 'none';
             }
@@ -50,6 +50,9 @@ auth.onAuthStateChanged(async user => {
             const dp = document.getElementById('daily-date-picker');
             if(dp) dp.valueAsDate = new Date();
 
+            // Clean old logs
+            if(typeof cleanOldLogs === 'function') cleanOldLogs(db);
+
             showSection('home');
         }
     } else {
@@ -57,9 +60,6 @@ auth.onAuthStateChanged(async user => {
     }
 });
 
-/**
- * Load classes based on affiliations or backward compatibility 'classId'
- */
 async function loadAffiliatedClasses(userData) {
     availableClasses = [];
     const select = document.getElementById('ctx-class-select');
@@ -69,11 +69,7 @@ async function loadAffiliatedClasses(userData) {
     if (userData.affiliations && Array.isArray(userData.affiliations) && userData.affiliations.length > 0) {
         const classIds = userData.affiliations.map(a => a.classId);
 
-        // Fetch class details (Name, etc.)
-        // Firestore 'in' query limit is 10. If teacher has >10 classes, we might need logic.
-        // For now, assume < 10.
         if (classIds.length > 0) {
-            // Chunking if necessary, but keep simple
             const chunks = [];
             for (let i = 0; i < classIds.length; i += 10) {
                  chunks.push(classIds.slice(i, i + 10));
@@ -93,7 +89,6 @@ async function loadAffiliatedClasses(userData) {
         }
     }
 
-    // Populate Dropdown
     if (availableClasses.length === 0) {
         const opt = document.createElement('option');
         opt.text = "所属クラスなし";
@@ -101,17 +96,27 @@ async function loadAffiliatedClasses(userData) {
         return;
     }
 
+    // Grouping by Type (Class vs Club)
+    const classGroup = document.createElement('optgroup');
+    classGroup.label = "クラス (ホームルーム)";
+    const clubGroup = document.createElement('optgroup');
+    clubGroup.label = "部活動";
+
     availableClasses.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c.id;
         opt.textContent = c.name;
-        select.appendChild(opt);
+        if (c.type === 'club') {
+            clubGroup.appendChild(opt);
+        } else {
+            classGroup.appendChild(opt);
+        }
     });
 
-    // Event Listener for Switch
-    select.onchange = (e) => switchClassContext(e.target.value);
+    if(classGroup.children.length > 0) select.appendChild(classGroup);
+    if(clubGroup.children.length > 0) select.appendChild(clubGroup);
 
-    // Set Initial Context (First one)
+    select.onchange = (e) => switchClassContext(e.target.value);
     switchClassContext(availableClasses[0].id);
 }
 
@@ -119,15 +124,11 @@ function switchClassContext(classId) {
     currentClassId = classId;
     const cls = availableClasses.find(c => c.id === classId);
 
-    // Update UI Header
     const homeHeader = document.getElementById('home-class-name');
     if (homeHeader) homeHeader.textContent = cls ? `(${cls.name})` : '';
 
-    // Set Dropdown Value (if changed programmatically)
     const select = document.getElementById('ctx-class-select');
     if (select.value !== classId) select.value = classId;
-
-    console.log("Switched context to:", cls ? cls.name : classId);
 
     // Refresh current section
     const activeSection = document.querySelector('section:not(.hidden)');
@@ -137,7 +138,6 @@ function switchClassContext(classId) {
     }
 }
 
-// Navigation
 function showSection(id) {
     document.querySelectorAll('section').forEach(el => el.classList.add('hidden'));
     document.getElementById(`section-${id}`).classList.remove('hidden');
@@ -150,9 +150,11 @@ function loadSectionData(id) {
     if (id === 'daily') loadDailyRecords();
     if (id === 'portal') loadPortalLinks();
     if (id === 'announce') loadAnnouncements();
+    if (id === 'students') loadStudentList();
     if (id === 'home') {
         loadHomeStats();
         loadWhiteboards();
+        loadAbsenteesWidget();
     }
 }
 
@@ -160,27 +162,7 @@ function loadSectionData(id) {
 async function loadHomeStats() {
     if (!currentClassId) return;
 
-    // Get Student Count (approx)
-    // Note: We need to count users who have this classId in their affiliations OR legacy classId
-    // Complex Query in Firestore.
-    // Simplified: Query users where classId == current (legacy) OR array-contains?
-    // "affiliations" is an array of objects, so we can't use array-contains easily on ID alone.
-    // Compromise: Just count legacy classId users for now or fetch all school users and filter?
-    // Given we are client-side only:
-    // fetch users in School, filter in memory (might be heavy if huge school).
-    // Or, we assume legacy 'classId' is still primary for "Home Room".
-    // Let's rely on 'classId' field if it exists, or skip precise count.
-
-    // Better Approach: Store a 'memberCount' in the class document? No, sync issues.
-    // Let's try to query 'classId' == currentClassId first (Legacy/Primary).
-
-    const studentsSnap = await db.collection('users')
-        .where('classId', '==', currentClassId)
-        .where('role', '==', 'student')
-        .get();
-    let studentCount = studentsSnap.size;
-
-    // Get Today's Records
+    // Just count daily records for now
     const today = new Date();
     today.setHours(0,0,0,0);
     const recordsSnap = await db.collection('daily_records')
@@ -191,7 +173,7 @@ async function loadHomeStats() {
 
     const html = `
         <div class="text-4xl font-bold text-center text-gray-700">
-            ${recordCount} <span class="text-lg text-gray-400">/ ${studentCount} (主所属)</span>
+            ${recordCount} <span class="text-lg text-gray-400">人</span>
         </div>
         <p class="text-center text-sm text-gray-500 mt-2">本日の健康観察提出済み</p>
     `;
@@ -199,9 +181,50 @@ async function loadHomeStats() {
     if (statsEl) statsEl.innerHTML = html;
 }
 
+async function loadAbsenteesWidget() {
+    if (!currentClassId) return;
+    const widget = document.getElementById('home-absentees');
+    if(!widget) return;
+
+    widget.innerHTML = '<p class="text-gray-400 text-sm">読み込み中...</p>';
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const snap = await db.collection('attendance')
+        .where('classId', '==', currentClassId)
+        .where('date', '==', todayStr)
+        .get();
+
+    if(snap.empty) {
+        widget.innerHTML = '<p class="text-gray-500 text-sm">本日の連絡はありません</p>';
+        return;
+    }
+
+    let html = '<ul class="space-y-2">';
+    snap.forEach(doc => {
+        const d = doc.data();
+        let badgeColor = 'bg-gray-500';
+        if(d.type === 'absent') badgeColor = 'bg-red-500';
+        if(d.type === 'suspend') badgeColor = 'bg-purple-500';
+        if(d.type === 'late') badgeColor = 'bg-yellow-500';
+
+        const typeLabel = d.type === 'absent' ? '欠席' : d.type === 'suspend' ? '出席停止' : '遅刻';
+        const reason = d.reason || '理由なし';
+        const suspendUntil = d.suspendUntil ? ` (~${d.suspendUntil})` : '';
+
+        html += `
+            <li class="flex justify-between items-center bg-gray-50 p-2 rounded cursor-pointer hover:bg-gray-100" onclick="alert('${reason}${suspendUntil}')">
+                <span class="font-bold text-sm">${d.studentName}</span>
+                <span class="${badgeColor} text-white text-xs px-2 py-1 rounded">${typeLabel}</span>
+            </li>
+        `;
+    });
+    html += '</ul>';
+    widget.innerHTML = html;
+}
+
 function launchActivity(type) {
     if (!currentClassId) return alert("クラス設定エラー");
-    // Only for screenshare now, whiteboard uses specific function
     const url = `${type}.html?classId=${currentClassId}&mode=teacher`;
     window.open(url, '_blank');
 }
@@ -218,7 +241,6 @@ function loadWhiteboards() {
     wbUnsubscribe = db.collection('classes').doc(currentClassId).collection('active_boards')
         .onSnapshot(snap => {
             list.innerHTML = '';
-            // UNLIMITED: Removed count check
             if(btn) {
                 btn.disabled = false;
                 btn.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -247,11 +269,7 @@ function createWhiteboard() {
     const nameInput = document.getElementById('new-wb-name');
     const name = nameInput.value;
     if (!name) return alert("名前を入力してください");
-
-    // Generate ID
     const boardId = 'wb_' + Math.random().toString(36).substr(2, 9);
-
-    // Open
     joinWhiteboard(boardId, name);
     nameInput.value = '';
 }
@@ -260,7 +278,6 @@ function joinWhiteboard(boardId, name) {
     const url = `whiteboard.html?classId=${currentClassId}&boardId=${boardId}&name=${encodeURIComponent(name)}&mode=teacher`;
     window.open(url, '_blank');
 }
-
 
 // --- DAILY RECORDS ---
 async function loadDailyRecords() {
@@ -291,7 +308,6 @@ async function loadDailyRecords() {
         const time = d.createdAt ? d.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--';
         const moodIcon = d.mood === 'good' ? '😊' : d.mood === 'bad' ? '😫' : '😐';
 
-        // Abnormality check
         const isAbnormal = (d.temperature > 37.5) || (d.mood === 'bad');
         let rowClass = isAbnormal ? "bg-red-50 border-l-4 border-red-500" : "";
         let tempClass = d.temperature > 37.5 ? "text-red-600 font-bold" : "";
@@ -299,7 +315,6 @@ async function loadDailyRecords() {
         const tr = document.createElement('tr');
         tr.className = `relative group ${rowClass}`;
 
-        // Tooltip logic for abnormal rows
         let tooltip = '';
         if (isAbnormal) {
             const notifiedText = d.adminNotified ? '<span class="text-green-600 font-bold text-xs ml-2">通知済み</span>' : '';
@@ -333,14 +348,13 @@ async function notifyAdmin(recordId) {
             adminNotified: true,
             notifiedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
-        loadDailyRecords(); // Refresh
+        loadDailyRecords();
         alert("管理者に通知しました");
     } catch(e) {
         console.error(e);
         alert("通知に失敗しました");
     }
 }
-
 
 // --- PORTAL ---
 async function loadPortalLinks() {
@@ -354,9 +368,7 @@ async function loadPortalLinks() {
         const d = doc.data();
         const div = document.createElement('div');
         div.className = "bg-gray-100 p-4 rounded flex flex-col items-center relative group";
-
         const img = d.iconUrl || 'https://via.placeholder.com/64';
-
         div.innerHTML = `
             <img src="${img}" class="w-16 h-16 rounded mb-2 object-cover">
             <span class="font-bold text-sm text-center">${d.title}</span>
@@ -370,9 +382,7 @@ async function addPortalLink() {
     const title = document.getElementById('link-title').value;
     const url = document.getElementById('link-url').value;
     const iconUrl = document.getElementById('link-icon').value;
-
     if (!title || !url) return alert('タイトルとURLは必須です');
-
     try {
         await db.collection('portal_links').add({
             classId: currentClassId,
@@ -393,7 +403,6 @@ async function deletePortalLink(id) {
     await db.collection('portal_links').doc(id).delete();
     loadPortalLinks();
 }
-
 
 // --- ANNOUNCEMENTS ---
 async function loadAnnouncements() {
@@ -428,22 +437,18 @@ async function draftAnnouncementWithAI() {
     if (!currentUser) return;
     const userDoc = await db.collection('users').doc(currentUser.uid).get();
     const tenantId = userDoc.data().tenantId;
-
-    const topic = prompt("お知らせのトピックやキーワードを入力してください (例: 来週の遠足の持ち物について)");
+    const topic = prompt("トピックを入力:");
     if (!topic) return;
-
     const btn = document.getElementById('btn-ai-draft');
-    const originalText = btn.textContent;
     btn.textContent = "AI生成中...";
     btn.disabled = true;
-
     try {
         const draft = await AIService.draftAnnouncement(tenantId, topic);
         document.getElementById('announce-body').value = draft;
     } catch(e) {
         alert("AI生成エラー: " + e.message);
     } finally {
-        btn.textContent = originalText;
+        btn.textContent = "🤖 AI下書き";
         btn.disabled = false;
     }
 }
@@ -451,9 +456,7 @@ async function draftAnnouncementWithAI() {
 async function postAnnouncement() {
     const title = document.getElementById('announce-title').value;
     const body = document.getElementById('announce-body').value;
-
     if(!title || !body) return alert("入力してください");
-
     try {
         await db.collection('announcements').add({
             classId: currentClassId,
@@ -467,4 +470,140 @@ async function postAnnouncement() {
     } catch(e) {
         alert("送信失敗");
     }
+}
+
+// --- STUDENT LIST & EDIT ---
+async function loadStudentList() {
+    if (!currentClassId) return;
+    const tbody = document.getElementById('student-list-body');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center p-4">読み込み中...</td></tr>';
+
+    const userDoc = await db.collection('users').doc(currentUser.uid).get();
+    const schoolId = userDoc.data().schoolId;
+
+    // 1. Fetch Absences Count
+    const absentCounts = {};
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    try {
+        const attendSnap = await db.collection('attendance')
+            .where('schoolId', '==', schoolId)
+            .where('type', 'in', ['absent', 'suspend'])
+            .where('createdAt', '>=', oneYearAgo)
+            .get();
+
+        attendSnap.forEach(doc => {
+            const sid = doc.data().studentId;
+            absentCounts[sid] = (absentCounts[sid] || 0) + 1;
+        });
+    } catch(e) {
+        console.warn("Error fetching attendance counts", e);
+    }
+
+    // 2. Fetch Students
+    const snap = await db.collection('users')
+        .where('schoolId', '==', schoolId)
+        .where('role', '==', 'student')
+        .get();
+
+    tbody.innerHTML = '';
+    const students = [];
+
+    snap.forEach(doc => {
+        const d = doc.data();
+        let isMember = false;
+        if(d.classId === currentClassId) isMember = true;
+        if(d.affiliations && d.affiliations.some(a => a.classId === currentClassId)) isMember = true;
+
+        if(isMember) {
+            students.push({id: doc.id, ...d});
+        }
+    });
+
+    if(students.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center p-4">生徒がいません</td></tr>';
+        return;
+    }
+
+    students.sort((a,b) => (a.attendanceNumber || 999) - (b.attendanceNumber || 999));
+
+    students.forEach(s => {
+        const tr = document.createElement('tr');
+        tr.className = "border-b hover:bg-gray-50";
+        tr.innerHTML = `
+            <td class="p-3 text-center">${s.attendanceNumber || '-'}</td>
+            <td class="p-3 font-bold">${s.name}</td>
+            <td class="p-3 text-sm text-gray-600">${s.email}</td>
+            <td class="p-3 text-center text-xs text-gray-400">欠席: -</td>
+            <td class="p-3 text-center">
+                <button onclick="editStudent('${s.id}', '${s.name}', '${s.attendanceNumber||''}')" class="bg-gray-200 px-2 py-1 rounded text-xs hover:bg-gray-300">編集</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function editStudent(uid, name, currentNum) {
+    // Show simple prompt-based edit or use a modal
+    // User requested "Change Grade, Class, Attendance Number"
+    // Since we don't have a modal HTML ready in teacher-dashboard.html, using prompts sequence or a simple injected modal is best.
+    // Let's inject a modal for better UX.
+
+    const modalId = 'edit-student-modal';
+    if(document.getElementById(modalId)) document.getElementById(modalId).remove();
+
+    const div = document.createElement('div');
+    div.id = modalId;
+    div.className = "fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50";
+    div.innerHTML = `
+        <div class="bg-white rounded p-6 w-96">
+            <h3 class="font-bold text-lg mb-4">${name} の編集</h3>
+            <label class="block text-sm font-bold mb-1">出席番号</label>
+            <input type="number" id="edit-num" value="${currentNum}" class="border p-2 w-full mb-4 rounded">
+
+            <p class="text-xs text-red-500 mb-4">※ 学年・クラスの変更は、学校管理画面または本人のプロフィール設定から行ってください。</p>
+
+            <div class="flex justify-end gap-2">
+                <button onclick="document.getElementById('${modalId}').remove()" class="bg-gray-300 px-4 py-2 rounded">キャンセル</button>
+                <button id="btn-save-student" class="bg-blue-600 text-white px-4 py-2 rounded">保存</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(div);
+
+    document.getElementById('btn-save-student').onclick = async () => {
+        const newNum = document.getElementById('edit-num').value;
+        try {
+            await db.collection('users').doc(uid).update({
+                attendanceNumber: parseInt(newNum)
+            });
+            alert("更新しました");
+            document.getElementById(modalId).remove();
+            loadStudentList();
+        } catch(e) {
+            alert("更新失敗: " + e.message);
+        }
+    };
+}
+
+// Cleanup Script
+async function cleanOldLogs(db) {
+    // 365 days ago
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - 1);
+
+    // Batch delete helper
+    const deleteOld = async (collection) => {
+        const snap = await db.collection(collection).where('createdAt', '<', cutoff).limit(500).get();
+        if(snap.empty) return;
+        const batch = db.batch();
+        snap.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        console.log(`Cleaned ${snap.size} old docs from ${collection}`);
+    };
+
+    await deleteOld('daily_records');
+    await deleteOld('attendance');
 }

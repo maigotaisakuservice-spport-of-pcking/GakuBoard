@@ -1,7 +1,7 @@
 // js/profile-setup.js
 // Handles the "Tell me about yourself" initial setup flow
 
-async function checkAndShowProfileSetup(user, db) {
+async function checkAndShowProfileSetup(user, db, force = false) {
     if (!user) return;
 
     try {
@@ -15,12 +15,12 @@ async function checkAndShowProfileSetup(user, db) {
         // Check if profile is complete
         // Criteria: Has Name, Kana, and at least one Affiliation (if student/teacher)
         // We use a flag 'isProfileComplete' for efficiency, but fallback to checking fields.
-        if (data.isProfileComplete === true) {
+        if (!force && data.isProfileComplete === true) {
             return;
         }
 
-        // If not complete, show modal
-        console.log("Profile incomplete. Showing setup modal.");
+        // If not complete or forced, show modal
+        console.log("Showing setup modal (force=" + force + ")");
         showProfileModal(userDocRef, data, db);
 
     } catch (e) {

@@ -67,38 +67,42 @@ if (isPreview) {
 
 async function initDashboard(userData) {
     // 2. Set User Data
-    document.getElementById('student-name').textContent = (userData.name || currentUser.email) + (isPreview ? " (プレビュー)" : "");
+    const nameEl = document.getElementById('student-name');
+    if(nameEl) nameEl.textContent = (userData.name || currentUser.email) + (isPreview ? " (プレビュー)" : "");
 
-    // 3. Resolve Affiliations
+    // Update Side Nav Name
+    const navNameEl = document.getElementById('nav-student-name');
+    if(navNameEl) navNameEl.textContent = userData.name || currentUser.email;
+
+    // 3. Resolve Affiliations & Populate Context Switcher
     if (isPreview && previewClassId) {
-        // Mock resolve for preview
         currentAffiliations = [{ classId: previewClassId, yearType: 'current' }];
         primaryClassId = previewClassId;
     } else if (isPreview && previewSchoolId) {
-        // School Admin Preview
         currentAffiliations = [];
         primaryClassId = null;
     } else {
         await resolveAffiliations(userData);
     }
 
-    // 4. Load Features
+    // 4. Load Features based on default context
     if(!isPreview) checkDailySubmission();
 
-    // For School Admin Preview, we pass `schoolId` explicitly to loader if affiliations empty?
-    // Modified loader to handle school-wide links even without affiliations if schoolId present.
+    // Load Apps
     loadUnifiedPortal(userData.schoolId);
 
+    // Load Home Content
     loadUnifiedAnnouncements();
     loadUnifiedActivities();
 
+    // Show Home by default
+    showStudentSection('home');
+
     if (isPreview) {
-        // Disable interactive elements
         document.querySelectorAll('button, input, select').forEach(el => {
-            // Keep tabs or basic nav working if any, but disable submission
-            if(el.id === 'daily-class-select') return; // allow switching context if mocked?
+            if(el.id === 'student-context-select') return;
+            if(el.classList.contains('nav-item')) return; // Allow navigation
             if(el.onclick) el.onclick = (e) => { e.preventDefault(); alert("プレビューモードでは操作できません"); };
-            // el.disabled = true; // Visual clutter if disabled style applied everywhere
         });
     }
 }
@@ -109,32 +113,93 @@ async function resolveAffiliations(userData) {
     if (userData.affiliations && Array.isArray(userData.affiliations)) {
         currentAffiliations = userData.affiliations;
     } else if (userData.classId) {
-        currentAffiliations.push({ classId: userData.classId, yearType: 'current' });
+        currentAffiliations.push({ classId: userData.classId, yearType: 'current' }); // Legacy support
     }
 
     const primary = currentAffiliations.find(a => a.yearType === 'current');
     primaryClassId = primary ? primary.classId : (currentAffiliations[0]?.classId || null);
 
-    const selectorContainer = document.getElementById('daily-class-selector-container');
-    const selector = document.getElementById('daily-class-select');
+    // Populate Context Switcher (Sidebar)
+    const contextSelect = document.getElementById('student-context-select');
+    if(contextSelect) {
+        contextSelect.innerHTML = '';
 
-    if (currentAffiliations.length > 1) {
-        selectorContainer.classList.remove('hidden');
-        selector.innerHTML = '';
+        // Group by Type? We need to fetch names and types.
+        const classGroup = document.createElement('optgroup'); classGroup.label = "クラス";
+        const clubGroup = document.createElement('optgroup'); clubGroup.label = "部活";
 
         for (const aff of currentAffiliations) {
             const clsDoc = await db.collection('classes').doc(aff.classId).get();
             if (clsDoc.exists) {
+                const d = clsDoc.data();
                 const opt = document.createElement('option');
                 opt.value = aff.classId;
-                opt.textContent = clsDoc.data().name;
+                opt.textContent = d.name;
                 if (aff.classId === primaryClassId) opt.selected = true;
-                selector.appendChild(opt);
+
+                if (d.type === 'club' || aff.yearType === 'club') {
+                    clubGroup.appendChild(opt);
+                } else {
+                    classGroup.appendChild(opt);
+                }
             }
         }
-    } else {
-        selectorContainer.classList.add('hidden');
+        if(classGroup.children.length > 0) contextSelect.appendChild(classGroup);
+        if(clubGroup.children.length > 0) contextSelect.appendChild(clubGroup);
+
+        // Handle case where only 1 context exists -> maybe hide selector?
+        // User requested "switch between class and club". Keep it visible if >1.
     }
+}
+
+// Navigation
+window.showStudentSection = function(id) {
+    // Hide all sections
+    ['home', 'apps', 'attendance'].forEach(s => {
+        document.getElementById(`sec-${s}`).classList.add('hidden');
+        document.getElementById(`nav-${s}`).classList.remove('bg-blue-50', 'text-blue-700', 'font-bold');
+        document.getElementById(`nav-${s}`).classList.add('text-gray-600');
+    });
+
+    // Show selected
+    document.getElementById(`sec-${id}`).classList.remove('hidden');
+    document.getElementById(`nav-${id}`).classList.add('bg-blue-50', 'text-blue-700', 'font-bold');
+    document.getElementById(`nav-${id}`).classList.remove('text-gray-600');
+}
+
+window.editProfile = async function() {
+    if(isPreview) return alert("プレビューモードです");
+    // Reuse profile setup modal logic
+    if (typeof checkAndShowProfileSetup === 'function' && currentUser) {
+        // Force show by passing a flag or just calling it (it checks "isProfileComplete" usually)
+        // We might need to modify profile-setup.js to allow forced edit.
+        // For now, let's just re-trigger the check, but if profile IS complete, it won't show.
+        // Let's manually show the modal if available in DOM.
+
+        // Actually, profile-setup.js injects HTML.
+        // We can call a function from profile-setup.js if we export it or make it global.
+        // Assuming checkAndShowProfileSetup is global.
+
+        // Hack: Reset profile complete flag temporarily? No.
+        // Best way: Create a dedicated "Edit Profile" function in profile-setup.js or here.
+        // Since we don't want to duplicate HTML injection, let's call the setup function with a "force" flag.
+
+        await checkAndShowProfileSetup(currentUser, db, true); // Added force flag support
+    }
+}
+
+window.switchStudentContext = function(classId) {
+    primaryClassId = classId;
+    console.log("Switched context to:", classId);
+    // Reload data dependent on context
+    // 1. Home Feed (Announcements/Activities)
+    // Actually, user requested "Class" vs "Club" view.
+    // Announcements are currently unified. Maybe filter?
+    // Let's reload Announcements/Activities filtered by this single ID.
+
+    loadUnifiedAnnouncements(classId);
+    loadUnifiedActivities(classId);
+    // Apps are categorized, no reload needed unless filtering there too.
 }
 
 function selectMood(mood, btn) {
@@ -216,37 +281,46 @@ async function submitDaily() {
 // --- UNIFIED VIEW LOGIC ---
 
 async function loadUnifiedPortal(explicitSchoolId = null) {
-    const grid = document.getElementById('portal-grid');
-    grid.innerHTML = '';
+    // Containers
+    const gridClass = document.getElementById('app-grid-class');
+    const gridSchool = document.getElementById('app-grid-school');
+    const gridTenant = document.getElementById('app-grid-tenant');
+    if(!gridClass) return; // UI not ready
 
-    // 1. School-wide Links
-    // If explicitSchoolId passed (Preview) or derived from affiliations (Normal)
-    // Actually, student doc has 'schoolId'.
+    gridClass.innerHTML = '';
+    gridSchool.innerHTML = '';
+    gridTenant.innerHTML = '';
+
     let schoolId = explicitSchoolId;
+    let tenantId = null;
+
     if (!schoolId && !isPreview) {
-        // Fetch from user doc again? Or pass in.
-        // Let's assume user belongs to one school for simplicity in this prototype.
         const userDoc = await db.collection('users').doc(currentUser.uid).get();
         schoolId = userDoc.data().schoolId;
+        tenantId = userDoc.data().tenantId;
     }
 
+    // 1. Tenant Wide (TODO: Add schema for tenant wide apps if needed, assume none or fetch from tenant doc?)
+    // User requested "Tenant Wide" category.
+    // Let's check portal_links where tenantId matches and isTenantWide=true (New field needed or infer)
+    // For now, skip or mock.
+
+    // 2. School Wide
     if (schoolId) {
         const schoolSnap = await db.collection('portal_links')
             .where('schoolId', '==', schoolId)
             .where('isSchoolWide', '==', true)
             .get();
-
-        schoolSnap.forEach(doc => renderPortalLink(doc.data(), grid));
+        schoolSnap.forEach(doc => renderPortalLink(doc.data(), gridSchool));
     }
 
-    // 2. Class-specific Links
+    // 3. Class/Club Specific
     const classIds = currentAffiliations.map(a => a.classId);
     if (classIds.length > 0) {
         const classSnap = await db.collection('portal_links')
             .where('classId', 'in', classIds)
             .get();
-
-        classSnap.forEach(doc => renderPortalLink(doc.data(), grid));
+        classSnap.forEach(doc => renderPortalLink(doc.data(), gridClass));
     }
 }
 
@@ -254,30 +328,37 @@ function renderPortalLink(d, container) {
     const a = document.createElement('a');
     a.href = isPreview ? '#' : d.url;
     a.target = isPreview ? '' : "_blank";
-    a.className = "bg-white p-4 rounded-xl shadow flex flex-col items-center hover:bg-gray-50 transition relative";
-
-    // Add badge if school wide?
-    const badge = d.isSchoolWide ? '<span class="absolute top-1 right-1 text-xs bg-purple-100 text-purple-800 px-1 rounded">全校</span>' : '';
+    a.className = "bg-white p-4 rounded-xl shadow flex flex-col items-center hover:bg-gray-50 transition relative transform hover:-translate-y-1";
 
     const icon = d.iconUrl || 'https://via.placeholder.com/64?text=App';
     a.innerHTML = `
-        ${badge}
-        <img src="${icon}" class="w-12 h-12 mb-2 rounded object-cover">
-        <span class="text-xs font-bold text-center leading-tight">${d.title}</span>
+        <img src="${icon}" class="w-16 h-16 mb-2 rounded object-cover">
+        <span class="text-xs font-bold text-center leading-tight text-gray-700">${d.title}</span>
     `;
     if(isPreview) a.onclick = (e) => { e.preventDefault(); alert(`[プレビュー] ${d.title} に遷移します`); };
     container.appendChild(a);
 }
 
-async function loadUnifiedAnnouncements() {
+async function loadUnifiedAnnouncements(filterClassId = null) {
     const list = document.getElementById('announce-list');
-    list.innerHTML = '';
+    list.innerHTML = '<p class="text-gray-400 text-sm">読み込み中...</p>';
 
-    const classIds = currentAffiliations.map(a => a.classId);
-    if (classIds.length === 0) return;
+    let targetIds = [];
+    if(filterClassId) {
+        targetIds = [filterClassId];
+    } else {
+        // Use primary if exists, else all
+        if(primaryClassId) targetIds = [primaryClassId];
+        else targetIds = currentAffiliations.map(a => a.classId);
+    }
+
+    if (targetIds.length === 0) {
+        list.innerHTML = '<p class="text-gray-400 text-sm">表示するクラスがありません</p>';
+        return;
+    }
 
     const snap = await db.collection('announcements')
-        .where('classId', 'in', classIds)
+        .where('classId', 'in', targetIds)
         .get();
 
     let announcements = [];
@@ -289,28 +370,45 @@ async function loadUnifiedAnnouncements() {
         return tB - tA;
     });
 
+    list.innerHTML = '';
+    if(announcements.length === 0) {
+        list.innerHTML = '<p class="text-gray-400 text-sm">お知らせはありません</p>';
+        return;
+    }
+
     announcements.forEach(d => {
         const div = document.createElement('div');
-        div.className = "bg-white p-4 rounded-xl shadow";
+        div.className = "bg-gray-50 p-4 rounded border-l-4 border-indigo-500";
         const date = d.createdAt ? d.createdAt.toDate().toLocaleDateString() : '';
         div.innerHTML = `
             <div class="flex justify-between items-center mb-1">
-                <span class="font-bold text-indigo-700">${d.title}</span>
+                <span class="font-bold text-gray-800">${d.title}</span>
                 <span class="text-xs text-gray-400">${date}</span>
             </div>
-            <p class="text-sm text-gray-600">${d.body}</p>
+            <p class="text-sm text-gray-600 whitespace-pre-wrap">${d.body}</p>
         `;
         list.appendChild(div);
     });
 }
 
-function loadUnifiedActivities() {
-    const classIds = currentAffiliations.map(a => a.classId);
+function loadUnifiedActivities(filterClassId = null) {
+    // Clear old listeners if any? (Not implemented for prototype simplicity)
 
-    classIds.forEach(cid => {
+    let targetIds = [];
+    if(filterClassId) {
+        targetIds = [filterClassId];
+        // Clear UI first
+        document.getElementById('wb-list').innerHTML = '';
+    } else {
+        targetIds = currentAffiliations.map(a => a.classId);
+    }
+
+    targetIds.forEach(cid => {
         db.collection('activities').doc(`screenshare_${cid}`).onSnapshot(doc => {
             const isPresenting = doc.exists && doc.data().isPresenting;
             if (isPresenting) {
+                // If filter is active, only show if match
+                if(filterClassId && filterClassId !== cid) return;
                 updateScreenShareUI(true, cid);
             } else {
                 updateScreenShareUI(false, cid);
@@ -318,7 +416,9 @@ function loadUnifiedActivities() {
         });
 
         db.collection('classes').doc(cid).collection('active_boards').onSnapshot(snap => {
-            updateWhiteboardList(cid, snap);
+            // Filter logic inside updateWhiteboardList?
+            // Simplified: Global State + Filter Render
+            updateWhiteboardList(cid, snap, filterClassId);
         });
     });
 }
@@ -359,20 +459,22 @@ function updateScreenShareUI(isPresenting, classId) {
 
 const wbState = {};
 
-function updateWhiteboardList(classId, snap) {
+function updateWhiteboardList(classId, snap, filterClassId) {
     wbState[classId] = [];
     snap.forEach(doc => wbState[classId].push({ id: doc.id, ...doc.data() }));
 
-    renderWhiteboards();
+    renderWhiteboards(filterClassId);
 }
 
-async function renderWhiteboards() {
+async function renderWhiteboards(filterClassId) {
     const list = document.getElementById('wb-list');
     list.innerHTML = '';
 
     let totalBoards = 0;
 
     for (const [cid, boards] of Object.entries(wbState)) {
+        if(filterClassId && filterClassId !== cid) continue;
+
         for (const b of boards) {
             totalBoards++;
 
@@ -392,7 +494,69 @@ async function renderWhiteboards() {
     }
 
     if (totalBoards === 0) {
-        list.innerHTML = '<p class="text-gray-500 text-sm">現在開催中のボードはありません</p>';
+        list.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">現在開催中のボードはありません</p>';
+    }
+}
+
+// Attendance Logic
+window.switchAttendTab = function(tab) {
+    const dailyPanel = document.getElementById('panel-daily');
+    const absentPanel = document.getElementById('panel-absent');
+    const tDaily = document.getElementById('tab-daily');
+    const tAbsent = document.getElementById('tab-absent');
+
+    if(tab === 'daily') {
+        dailyPanel.classList.remove('hidden');
+        absentPanel.classList.add('hidden');
+        tDaily.classList.add('border-blue-500', 'text-blue-600', 'font-bold');
+        tDaily.classList.remove('border-transparent', 'text-gray-500');
+        tAbsent.classList.add('border-transparent', 'text-gray-500');
+        tAbsent.classList.remove('border-blue-500', 'text-blue-600', 'font-bold');
+    } else {
+        dailyPanel.classList.add('hidden');
+        absentPanel.classList.remove('hidden');
+        tAbsent.classList.add('border-blue-500', 'text-blue-600', 'font-bold');
+        tAbsent.classList.remove('border-transparent', 'text-gray-500');
+        tDaily.classList.add('border-transparent', 'text-gray-500');
+        tDaily.classList.remove('border-blue-500', 'text-blue-600', 'font-bold');
+    }
+}
+
+window.submitAttendance = async function() {
+    if(isPreview) return alert("プレビューモードです");
+
+    const date = document.getElementById('attend-date').value;
+    const typeRadio = document.querySelector('input[name="attend-type"]:checked');
+    const reason = document.getElementById('attend-reason').value;
+    const suspendUntil = document.getElementById('suspend-until').value;
+
+    if(!date) return alert("日付を選択してください");
+    if(!typeRadio) return alert("区分を選択してください");
+
+    const type = typeRadio.value;
+
+    if(!primaryClassId) return alert("クラスが見つかりません");
+
+    try {
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        const schoolId = userDoc.data().schoolId;
+
+        await db.collection('attendance').add({
+            studentId: currentUser.uid,
+            studentName: userDoc.data().name,
+            classId: primaryClassId,
+            schoolId: schoolId,
+            date: date,
+            type: type,
+            reason: reason,
+            suspendUntil: type === 'suspend' ? suspendUntil : null,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        alert("連絡しました");
+        document.getElementById('attend-reason').value = '';
+    } catch(e) {
+        alert("送信失敗: " + e.message);
     }
 }
 

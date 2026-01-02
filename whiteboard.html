@@ -63,10 +63,26 @@
 
         <div class="tool-group">
             <span id="statusDisplay">Connecting...</span>
+            <!-- NEW: Settings and Webhook -->
+            <button id="wbSettingsBtn" class="btn-tool" style="display:none;" onclick="openSettings()" title="Settings"><i class="fas fa-cog"></i></button>
+            <button id="wbSendBtn" class="btn-tool" style="display:none;" onclick="finishAndSend()" title="Finish & Send"><i class="fas fa-paper-plane"></i></button>
+
             <button id="studentDrawToggle" class="btn-tool" style="display:none;" onclick="toggleStudentDraw()">
                 <i class="fas fa-pencil-alt"></i> 生徒書き込み: <span id="studentDrawStatus">OFF</span>
             </button>
         </div>
+    </div>
+
+    <!-- Webhook Settings Modal -->
+    <div id="settings-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.5); z-index:20;">
+        <h3 style="margin-top:0;">設定</h3>
+        <label style="display:block; margin-bottom:5px;">Webhook URL (Teams/Google):</label>
+        <input type="text" id="webhook-url" style="width:100%; padding:5px; margin-bottom:10px;" placeholder="https://hooks.slack.com/...">
+        <div style="text-align:right;">
+            <button onclick="saveSettings()" style="background:#2ecc71; color:white; border:none; padding:5px 10px; border-radius:3px;">保存</button>
+            <button onclick="document.getElementById('settings-modal').style.display='none'" style="background:#95a5a6; color:white; border:none; padding:5px 10px; border-radius:3px;">閉じる</button>
+        </div>
+    </div>
     </div>
 
     <div id="canvas-container">
@@ -123,6 +139,12 @@
             if (mode === 'teacher') {
                 initTeacher(user);
                 document.getElementById('studentDrawToggle').style.display = 'block';
+                document.getElementById('wbSettingsBtn').style.display = 'block';
+                document.getElementById('wbSendBtn').style.display = 'block';
+
+                // Load Webhook URL from localStorage
+                const savedUrl = localStorage.getItem('wb_webhook_url');
+                if(savedUrl) document.getElementById('webhook-url').value = savedUrl;
 
                 // Check AI Config
                 db.collection('users').doc(user.uid).get().then(doc => {
@@ -147,6 +169,69 @@
                 document.getElementById('aiPenBtn').remove();
             }
         });
+
+        function openSettings() {
+            document.getElementById('settings-modal').style.display = 'block';
+        }
+
+        function saveSettings() {
+            const url = document.getElementById('webhook-url').value;
+            localStorage.setItem('wb_webhook_url', url);
+            document.getElementById('settings-modal').style.display = 'none';
+            alert("設定を保存しました");
+        }
+
+        async function finishAndSend() {
+            if(!confirm("ホワイトボードを終了し、画像を送信しますか？")) return;
+
+            // 1. Capture Image
+            const dataUrl = canvas.toDataURL('image/png');
+
+            // 2. Download (Fallback)
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = `whiteboard_${new Date().toISOString()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // 3. Webhook
+            const webhookUrl = localStorage.getItem('wb_webhook_url');
+            if(webhookUrl) {
+                document.getElementById('statusDisplay').textContent = "Sending to Webhook...";
+                try {
+                    // Note: Most webhooks require JSON.
+                    // Teams/Slack Incoming Webhook usually wants text or blocks.
+                    // Sending raw image data usually requires a file host.
+                    // Since we have no backend, we can't host the file to get a public URL.
+                    // We can only post base64 if the receiver supports it, OR just notify "Session Ended".
+                    // User asked to "send screenshot".
+                    // Without a file server, we cannot send an image attachment to Teams easily via simple webhook.
+                    // We will send a notification text saying "Whiteboard saved locally".
+
+                    // Attempting to send JSON payload
+                    await fetch(webhookUrl, {
+                        method: 'POST',
+                        mode: 'no-cors', // To avoid CORS errors with some webhooks, but response is opaque
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: `[GAKU-Board] ホワイトボード「${decodeURIComponent(boardName)}」が終了しました。\n画像は先生の端末に保存されました。`
+                        })
+                    });
+                    alert("Webhookへ通知を送信し、画像をダウンロードしました。");
+                } catch(e) {
+                    console.error(e);
+                    alert("Webhook送信に失敗しました (画像はダウンロードされました)");
+                } finally {
+                    document.getElementById('statusDisplay').textContent = "Finished";
+                }
+            } else {
+                alert("画像をダウンロードしました。(Webhook未設定)");
+            }
+
+            // Close board?
+            // window.close();
+        }
 
         // ------------------
         // PeerJS Setup

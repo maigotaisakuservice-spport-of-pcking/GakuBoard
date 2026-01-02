@@ -20,9 +20,10 @@
 
     <div class="container mx-auto p-8">
 
-        <!-- Tabs (Removed MEXCBT/Settings) -->
+        <!-- Tabs -->
         <div class="flex border-b border-gray-300 mb-6">
             <button onclick="switchTab('school')" id="tab-school" class="px-6 py-2 bg-white border-t border-l border-r rounded-t text-indigo-700 font-bold">学校管理</button>
+            <button onclick="switchTab('portal')" id="tab-portal" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">テナントアプリ管理</button>
         </div>
 
         <!-- TAB: SCHOOL MANAGEMENT -->
@@ -109,14 +110,53 @@
             </div>
         </div>
 
+        <!-- TAB: PORTAL (Tenant Wide) -->
+        <div id="content-portal" class="hidden">
+            <div class="bg-white p-6 rounded shadow mb-8">
+                <h3 class="text-lg font-bold mb-4">テナント共通アプリ (全学校へ配信)</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 items-end bg-gray-50 p-4 rounded border">
+                    <div class="col-span-1">
+                        <label class="block text-xs font-bold mb-1">タイトル</label>
+                        <input type="text" id="portal-title" placeholder="例: 教育委員会ポータル" class="w-full border p-2 rounded">
+                    </div>
+                    <div class="col-span-1">
+                        <label class="block text-xs font-bold mb-1">URL</label>
+                        <input type="url" id="portal-url" placeholder="https://..." class="w-full border p-2 rounded">
+                    </div>
+                    <div class="col-span-1">
+                        <label class="block text-xs font-bold mb-1">アイコンURL (任意)</label>
+                        <input type="url" id="portal-icon" placeholder="https://..." class="w-full border p-2 rounded">
+                    </div>
+                    <div>
+                        <button onclick="addTenantPortalLink()" class="bg-indigo-600 text-white w-full py-2 rounded hover:bg-indigo-700">追加する</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-6 gap-4" id="portal-list">
+                    <!-- Icons -->
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script>
         let currentTenantId = null;
 
-        // Tab Switching (Simplified)
+        // Tab Switching
         function switchTab(tabId) {
-            // Only school tab remains
+            ['school', 'portal'].forEach(t => {
+                document.getElementById(`content-${t}`).classList.add('hidden');
+                const btn = document.getElementById(`tab-${t}`);
+                btn.classList.remove('bg-white', 'text-indigo-700', 'font-bold', 'border-t', 'border-l', 'border-r', 'rounded-t');
+                btn.classList.add('bg-gray-200', 'text-gray-600');
+            });
+            document.getElementById(`content-${tabId}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-${tabId}`);
+            activeBtn.classList.remove('bg-gray-200', 'text-gray-600');
+            activeBtn.classList.add('bg-white', 'text-indigo-700', 'font-bold', 'border-t', 'border-l', 'border-r', 'rounded-t');
+
+            if(tabId === 'portal') loadTenantPortalLinks();
         }
 
         auth.onAuthStateChanged(async user => {
@@ -314,6 +354,65 @@
                 console.error(e);
                 alert('更新失敗');
             }
+        }
+
+        // --- Tenant Portal ---
+        async function loadTenantPortalLinks() {
+            const container = document.getElementById('portal-list');
+            container.innerHTML = '読み込み中...';
+
+            // Scope: Tenant Wide
+            // Note: We don't have 'scope' field yet in old data, but we can assume tenantId match and isTenantWide=true
+            // Wait, previous design used 'isSchoolWide'. Let's use 'isTenantWide'.
+
+            const snap = await db.collection('portal_links')
+                .where('tenantId', '==', currentTenantId)
+                .where('isTenantWide', '==', true)
+                .get();
+
+            container.innerHTML = '';
+            snap.forEach(doc => {
+                const d = doc.data();
+                const div = document.createElement('div');
+                div.className = "bg-gray-100 p-4 rounded flex flex-col items-center relative group";
+                const img = d.iconUrl || 'https://via.placeholder.com/64';
+                div.innerHTML = `
+                    <img src="${img}" class="w-16 h-16 rounded mb-2 object-cover">
+                    <span class="font-bold text-sm text-center truncate w-full">${d.title}</span>
+                    <button onclick="deletePortalLink('${doc.id}')" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition">×</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function addTenantPortalLink() {
+            const title = document.getElementById('portal-title').value;
+            const url = document.getElementById('portal-url').value;
+            const iconUrl = document.getElementById('portal-icon').value;
+
+            if (!title || !url) return alert('タイトルとURLは必須です');
+
+            try {
+                await db.collection('portal_links').add({
+                    tenantId: currentTenantId,
+                    isTenantWide: true,
+                    // No schoolId or classId
+                    title, url, iconUrl,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                document.getElementById('portal-title').value = '';
+                document.getElementById('portal-url').value = '';
+                document.getElementById('portal-icon').value = '';
+                loadTenantPortalLinks();
+            } catch(e) {
+                alert("追加失敗: " + e.message);
+            }
+        }
+
+        async function deletePortalLink(id) {
+            if(!confirm('削除しますか？')) return;
+            await db.collection('portal_links').doc(id).delete();
+            loadTenantPortalLinks();
         }
     </script>
 </body>

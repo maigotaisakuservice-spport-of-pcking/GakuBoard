@@ -101,14 +101,41 @@ async function deleteCollectionByQuery(db, collectionName, queryFn) {
 async function deleteUserAndData(db, userId) {
     // 1. Delete Daily Records
     await deleteCollectionByQuery(db, 'daily_records', ref => ref.where('studentId', '==', userId));
-    // 2. Delete MEXCBT Results
+    // 2. Delete Attendance Records
+    await deleteCollectionByQuery(db, 'attendance', ref => ref.where('studentId', '==', userId));
+    // 3. Delete MEXCBT Results (Legacy)
     await deleteCollectionByQuery(db, 'mexcbt_results', ref => ref.where('studentId', '==', userId));
-    // 3. Delete MEXCBT Assignments
+    // 4. Delete MEXCBT Assignments (Legacy)
     await deleteCollectionByQuery(db, 'mexcbt_assignments', ref => ref.where('targetId', '==', userId).where('targetType', '==', 'student'));
 
-    // 4. Delete User Doc
+    // 5. Delete User Doc
     await db.collection('users').doc(userId).delete();
     console.log(`Deleted user and data: ${userId}`);
+}
+
+async function cleanOldLogs(db, schoolId) {
+    if (!schoolId) return;
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    console.log(`Cleaning logs older than: ${oneYearAgo.toISOString()} for school: ${schoolId}`);
+
+    // 1. Daily Records
+    // Note: Use simple query to avoid composite index requirements if possible, but rules require schoolId.
+    // If 'createdAt' index is missing combined with 'schoolId', this might fail.
+    // We assume the user has created necessary indexes or we catch the error gracefully.
+    try {
+        await deleteCollectionByQuery(db, 'daily_records', ref =>
+            ref.where('schoolId', '==', schoolId).where('createdAt', '<', oneYearAgo)
+        );
+
+        await deleteCollectionByQuery(db, 'attendance', ref =>
+            ref.where('schoolId', '==', schoolId).where('createdAt', '<', oneYearAgo)
+        );
+        console.log("Log cleanup complete");
+    } catch(e) {
+        console.warn("Log cleanup failed (likely missing index):", e);
+    }
 }
 
 async function deleteClassAndData(db, classId) {
