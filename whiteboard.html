@@ -64,6 +64,7 @@
         <div class="tool-group">
             <span id="statusDisplay">Connecting...</span>
             <!-- NEW: Settings and Webhook -->
+            <button id="wbBroadcastBtn" class="btn-tool" style="display:none;" onclick="openBroadcastSettings()" title="Broadcast Target"><i class="fas fa-users"></i></button>
             <button id="wbSettingsBtn" class="btn-tool" style="display:none;" onclick="openSettings()" title="Settings"><i class="fas fa-cog"></i></button>
             <button id="wbSendBtn" class="btn-tool" style="display:none;" onclick="finishAndSend()" title="Finish & Send"><i class="fas fa-paper-plane"></i></button>
 
@@ -81,6 +82,26 @@
         <div style="text-align:right;">
             <button onclick="saveSettings()" style="background:#2ecc71; color:white; border:none; padding:5px 10px; border-radius:3px;">保存</button>
             <button onclick="document.getElementById('settings-modal').style.display='none'" style="background:#95a5a6; color:white; border:none; padding:5px 10px; border-radius:3px;">閉じる</button>
+        </div>
+    </div>
+
+    <!-- Broadcast Target Modal -->
+    <div id="broadcast-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.5); z-index:20; max-height:80vh; overflow-y:auto; min-width:300px;">
+        <h3 style="margin-top:0;">配信先設定</h3>
+        <div style="margin-bottom:10px;">
+            <label><input type="radio" name="broadcast-target" value="all" checked onchange="toggleStudentList(false)"> 全員 (クラス全体)</label>
+        </div>
+        <div style="margin-bottom:10px;">
+            <label><input type="radio" name="broadcast-target" value="select" onchange="toggleStudentList(true)"> 生徒を選択</label>
+        </div>
+
+        <div id="student-selection-list" style="display:none; border:1px solid #ccc; padding:10px; margin-bottom:10px; max-height:200px; overflow-y:auto;">
+            <p style="color:#888;">読み込み中...</p>
+        </div>
+
+        <div style="text-align:right;">
+            <button onclick="saveBroadcastSettings()" style="background:#3498db; color:white; border:none; padding:5px 10px; border-radius:3px;">適用</button>
+            <button onclick="document.getElementById('broadcast-modal').style.display='none'" style="background:#95a5a6; color:white; border:none; padding:5px 10px; border-radius:3px;">閉じる</button>
         </div>
     </div>
     </div>
@@ -139,6 +160,7 @@
             if (mode === 'teacher') {
                 initTeacher(user);
                 document.getElementById('studentDrawToggle').style.display = 'block';
+                document.getElementById('wbBroadcastBtn').style.display = 'block';
                 document.getElementById('wbSettingsBtn').style.display = 'block';
                 document.getElementById('wbSendBtn').style.display = 'block';
 
@@ -179,6 +201,70 @@
             localStorage.setItem('wb_webhook_url', url);
             document.getElementById('settings-modal').style.display = 'none';
             alert("設定を保存しました");
+        }
+
+        // Broadcast Logic
+        let cachedStudents = null;
+        async function openBroadcastSettings() {
+            document.getElementById('broadcast-modal').style.display = 'block';
+            if(!cachedStudents) {
+                const list = document.getElementById('student-selection-list');
+
+                // Fetch students in this class
+                // Since we don't have full query power easily without index, we query users by classId
+                // Wait, users store 'classId'.
+                try {
+                     const snap = await db.collection('users').where('classId', '==', classId).where('role', '==', 'student').get();
+                     cachedStudents = [];
+                     snap.forEach(d => cachedStudents.push({id: d.id, ...d.data()}));
+
+                     // Also check affiliations if possible? For now, stick to primary class.
+
+                     renderStudentList();
+                } catch(e) {
+                     list.innerHTML = "読み込みエラー: " + e.message;
+                }
+            }
+        }
+
+        function toggleStudentList(show) {
+            document.getElementById('student-selection-list').style.display = show ? 'block' : 'none';
+        }
+
+        function renderStudentList() {
+            const list = document.getElementById('student-selection-list');
+            if(!cachedStudents || cachedStudents.length === 0) {
+                list.innerHTML = "生徒が見つかりません";
+                return;
+            }
+            list.innerHTML = '';
+            cachedStudents.sort((a,b) => (a.attendanceNumber || 999) - (b.attendanceNumber || 999));
+
+            cachedStudents.forEach(s => {
+                const div = document.createElement('div');
+                div.innerHTML = `<label><input type="checkbox" class="student-chk" value="${s.id}"> ${s.attendanceNumber || ''} ${s.name}</label>`;
+                list.appendChild(div);
+            });
+        }
+
+        async function saveBroadcastSettings() {
+            const radios = document.getElementsByName('broadcast-target');
+            let target = 'all';
+            for(const r of radios) if(r.checked) target = r.value;
+
+            let allowed = 'all';
+            if(target === 'select') {
+                const chks = document.querySelectorAll('.student-chk:checked');
+                allowed = Array.from(chks).map(c => c.value);
+            }
+
+            // Update Board Doc
+            await db.collection('classes').doc(classId).collection('active_boards').doc(boardId).update({
+                allowedStudents: allowed
+            });
+
+            document.getElementById('broadcast-modal').style.display = 'none';
+            alert("配信先を更新しました");
         }
 
         async function finishAndSend() {
@@ -304,6 +390,17 @@
                     }
 
                     const data = doc.data();
+
+                    // Access Control Check
+                    if (data.allowedStudents && data.allowedStudents !== 'all') {
+                         if (!data.allowedStudents.includes(user.uid)) {
+                             // Block access
+                             document.body.innerHTML = '<div style="display:flex;height:100vh;justify-content:center;align-items:center;flex-direction:column"><h1>アクセス権がありません</h1><p>このホワイトボードは特定の生徒のみに公開されています。</p></div>';
+                             if(peer) peer.destroy();
+                             return;
+                         }
+                    }
+
                     const hostId = data.hostPeerId;
 
                     if (data.studentCanDraw !== undefined) {
