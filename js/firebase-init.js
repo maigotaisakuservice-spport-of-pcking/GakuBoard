@@ -13,6 +13,13 @@ if (typeof firebase === 'undefined') {
     window.auth = firebase.auth();
     window.db = firebase.firestore();
 
+    // Check if Storage is loaded
+    if(firebase.storage) {
+        window.storage = firebase.storage();
+    } else {
+        console.warn("Firebase Storage module not loaded.");
+    }
+
     // Enable offline persistence
     window.db.enablePersistence()
         .catch((err) => {

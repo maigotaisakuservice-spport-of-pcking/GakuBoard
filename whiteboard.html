@@ -10,6 +10,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     <script src="js/firebase-config.js"></script>
     <script src="js/firebase-init.js"></script>
     <script src="js/ai-service.js"></script>
@@ -164,9 +165,15 @@
                 document.getElementById('wbSettingsBtn').style.display = 'block';
                 document.getElementById('wbSendBtn').style.display = 'block';
 
-                // Load Webhook URL from localStorage
-                const savedUrl = localStorage.getItem('wb_webhook_url');
-                if(savedUrl) document.getElementById('webhook-url').value = savedUrl;
+                // Load Webhook URL from Firestore (Class Config)
+                try {
+                    const classDoc = await db.collection('classes').doc(classId).get();
+                    if(classDoc.exists && classDoc.data().webhookUrl) {
+                        document.getElementById('webhook-url').value = classDoc.data().webhookUrl;
+                    }
+                } catch(e) {
+                    console.error("Failed to load class webhook config", e);
+                }
 
                 // Check AI Config
                 db.collection('users').doc(user.uid).get().then(doc => {
@@ -196,11 +203,19 @@
             document.getElementById('settings-modal').style.display = 'block';
         }
 
-        function saveSettings() {
+        async function saveSettings() {
             const url = document.getElementById('webhook-url').value;
-            localStorage.setItem('wb_webhook_url', url);
-            document.getElementById('settings-modal').style.display = 'none';
-            alert("設定を保存しました");
+            // Save to Class Config in Firestore
+            try {
+                await db.collection('classes').doc(classId).set({
+                    webhookUrl: url
+                }, { merge: true });
+                document.getElementById('settings-modal').style.display = 'none';
+                alert("クラス設定として保存しました。他の先生とも共有されます。");
+            } catch(e) {
+                console.error(e);
+                alert("保存に失敗しました");
+            }
         }
 
         // Broadcast Logic
@@ -270,10 +285,26 @@
         async function finishAndSend() {
             if(!confirm("ホワイトボードを終了し、画像を送信しますか？")) return;
 
+            document.getElementById('statusDisplay').textContent = "Processing...";
+
             // 1. Capture Image
             const dataUrl = canvas.toDataURL('image/png');
 
-            // 2. Download (Fallback)
+            // 2. Upload to Firebase Storage (if available) or Fallback
+            let imageUrl = null;
+            try {
+                if (firebase.storage) {
+                    document.getElementById('statusDisplay').textContent = "Uploading Image...";
+                    const ref = firebase.storage().ref().child(`whiteboards/${classId}/${Date.now()}.png`);
+                    const snapshot = await ref.putString(dataUrl, 'data_url');
+                    imageUrl = await snapshot.ref.getDownloadURL();
+                    console.log("Image uploaded:", imageUrl);
+                }
+            } catch(e) {
+                console.warn("Storage upload failed, falling back to local download only", e);
+            }
+
+            // 3. Download Local Copy (Always safe)
             const a = document.createElement('a');
             a.href = dataUrl;
             a.download = `whiteboard_${new Date().toISOString()}.png`;
@@ -281,42 +312,64 @@
             a.click();
             document.body.removeChild(a);
 
-            // 3. Webhook
-            const webhookUrl = localStorage.getItem('wb_webhook_url');
+            // 4. Webhook
+            const webhookUrl = document.getElementById('webhook-url').value;
             if(webhookUrl) {
-                document.getElementById('statusDisplay').textContent = "Sending to Webhook...";
+                document.getElementById('statusDisplay').textContent = "Sending Webhook...";
                 try {
-                    // Note: Most webhooks require JSON.
-                    // Teams/Slack Incoming Webhook usually wants text or blocks.
-                    // Sending raw image data usually requires a file host.
-                    // Since we have no backend, we can't host the file to get a public URL.
-                    // We can only post base64 if the receiver supports it, OR just notify "Session Ended".
-                    // User asked to "send screenshot".
-                    // Without a file server, we cannot send an image attachment to Teams easily via simple webhook.
-                    // We will send a notification text saying "Whiteboard saved locally".
+                    let payload;
 
-                    // Attempting to send JSON payload
+                    if (imageUrl) {
+                        // Adaptive Card with Image
+                        payload = {
+                            "type": "message",
+                            "attachments": [
+                                {
+                                    "contentType": "application/vnd.microsoft.card.adaptive",
+                                    "contentUrl": null,
+                                    "content": {
+                                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                                        "type": "AdaptiveCard",
+                                        "version": "1.2",
+                                        "body": [
+                                            {
+                                                "type": "TextBlock",
+                                                "text": `[GAKU-Board] ホワイトボード「${decodeURIComponent(boardName)}」が終了しました`,
+                                                "size": "Medium",
+                                                "weight": "Bolder"
+                                            },
+                                            {
+                                                "type": "Image",
+                                                "url": imageUrl,
+                                                "size": "Large"
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        };
+                    } else {
+                        // Text Only
+                        payload = {
+                            text: `[GAKU-Board] ホワイトボード「${decodeURIComponent(boardName)}」が終了しました。\n画像は先生の端末に保存されました。`
+                        };
+                    }
+
                     await fetch(webhookUrl, {
                         method: 'POST',
-                        mode: 'no-cors', // To avoid CORS errors with some webhooks, but response is opaque
+                        mode: 'no-cors',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            text: `[GAKU-Board] ホワイトボード「${decodeURIComponent(boardName)}」が終了しました。\n画像は先生の端末に保存されました。`
-                        })
+                        body: JSON.stringify(payload)
                     });
-                    alert("Webhookへ通知を送信し、画像をダウンロードしました。");
+
+                    alert("Webhookへ送信しました");
                 } catch(e) {
                     console.error(e);
-                    alert("Webhook送信に失敗しました (画像はダウンロードされました)");
-                } finally {
-                    document.getElementById('statusDisplay').textContent = "Finished";
+                    alert("Webhook送信に失敗しました");
                 }
-            } else {
-                alert("画像をダウンロードしました。(Webhook未設定)");
             }
 
-            // Close board?
-            // window.close();
+            document.getElementById('statusDisplay').textContent = "Finished";
         }
 
         // ------------------
