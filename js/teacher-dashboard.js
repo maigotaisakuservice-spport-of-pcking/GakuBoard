@@ -87,27 +87,28 @@ async function loadAffiliatedClasses(userData) {
     const select = document.getElementById('ctx-class-select');
     select.innerHTML = '';
 
-    // A. New 'affiliations' array
-    if (userData.affiliations && Array.isArray(userData.affiliations) && userData.affiliations.length > 0) {
-        const classIds = userData.affiliations.map(a => a.classId);
+    // Merge classId and affiliations
+    const classIds = new Set();
 
-        if (classIds.length > 0) {
-            const chunks = [];
-            for (let i = 0; i < classIds.length; i += 10) {
-                 chunks.push(classIds.slice(i, i + 10));
-            }
+    // 1. Primary Class
+    if (userData.classId) classIds.add(userData.classId);
 
-            for (const chunk of chunks) {
-                const snap = await db.collection('classes').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get();
-                snap.forEach(d => availableClasses.push({ id: d.id, ...d.data() }));
-            }
-        }
+    // 2. Affiliations
+    if (userData.affiliations && Array.isArray(userData.affiliations)) {
+        userData.affiliations.forEach(a => classIds.add(a.classId));
     }
-    // B. Old 'classId' fallback
-    else if (userData.classId) {
-        const clsDoc = await db.collection('classes').doc(userData.classId).get();
-        if (clsDoc.exists) {
-            availableClasses.push({ id: clsDoc.id, ...clsDoc.data() });
+
+    const idsArray = Array.from(classIds);
+
+    if (idsArray.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < idsArray.length; i += 10) {
+             chunks.push(idsArray.slice(i, i + 10));
+        }
+
+        for (const chunk of chunks) {
+            const snap = await db.collection('classes').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get();
+            snap.forEach(d => availableClasses.push({ id: d.id, ...d.data() }));
         }
     }
 

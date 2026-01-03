@@ -54,6 +54,12 @@
         </div>
 
         <div class="tool-group">
+            <button onclick="changePage(-1)" class="btn-tool"><i class="fas fa-chevron-left"></i></button>
+            <span id="pageDisplay" class="text-white font-bold mt-1">1 / 6</span>
+            <button onclick="changePage(1)" class="btn-tool"><i class="fas fa-chevron-right"></i></button>
+        </div>
+
+        <div class="tool-group">
             <button class="btn-tool active" id="penBtn" onclick="setTool('pen')"><i class="fas fa-pen"></i></button>
             <button class="btn-tool" id="aiPenBtn" onclick="setTool('ai_pen')" title="AI Magic Pen"><i class="fas fa-magic"></i></button>
             <button class="btn-tool" id="eraserBtn" onclick="setTool('eraser')"><i class="fas fa-eraser"></i></button>
@@ -127,6 +133,11 @@
         let currentTool = 'pen';
         let currentColor = '#000000';
         let currentWidth = 2;
+
+        // Pagination
+        let currentPage = 0;
+        const maxPages = 6;
+        const pageData = new Array(maxPages).fill(null);
 
         // AI Pen State
         let aiStrokePoints = [];
@@ -282,27 +293,37 @@
         }
 
         async function finishAndSend() {
-            if(!confirm("ホワイトボードを終了し、画像を送信しますか？")) return;
+            if(!confirm("ホワイトボードを終了し、画像を保存・送信しますか？(全ページ)")) return;
 
-            document.getElementById('statusDisplay').textContent = "Processing...";
+            document.getElementById('statusDisplay').textContent = "Saving...";
 
-            // 1. Capture Image (Base64)
-            const dataUrl = canvas.toDataURL('image/png');
+            // Save current page first
+            pageData[currentPage] = canvas.toDataURL('image/png');
 
-            // 2. Download Local Copy (Always safe)
-            const a = document.createElement('a');
-            a.href = dataUrl;
-            a.download = `whiteboard_${new Date().toISOString()}.png`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            // 1. Download Local Copies (All pages with content)
+            let savedCount = 0;
+            let lastDataUrl = null; // For webhook cover
 
-            // 3. Webhook (Base64)
+            for (let i = 0; i < maxPages; i++) {
+                if (pageData[i]) {
+                    const a = document.createElement('a');
+                    a.href = pageData[i];
+                    a.download = `whiteboard_${decodeURIComponent(boardName)}_p${i+1}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    savedCount++;
+                    lastDataUrl = pageData[i];
+                    await new Promise(r => setTimeout(r, 200)); // Delay for browser download limit
+                }
+            }
+
+            // 2. Webhook (Base64 - Send Last Active Page or Page 1)
             const webhookUrl = document.getElementById('webhook-url').value;
-            if(webhookUrl) {
+            if(webhookUrl && lastDataUrl) {
                 document.getElementById('statusDisplay').textContent = "Sending Webhook...";
                 try {
-                    // Try sending Base64 via Adaptive Card
+                    // Adaptive Card with Cover Image
                     const payload = {
                         "type": "message",
                         "attachments": [
@@ -322,14 +343,13 @@
                                         },
                                         {
                                             "type": "TextBlock",
-                                            "text": "※画像が表示されない場合は、端末に保存されたファイルをご確認ください。",
+                                            "text": `計 ${savedCount} 枚のボード画像が端末に保存されました。`,
                                             "size": "Small",
-                                            "color": "Attention",
                                             "wrap": true
                                         },
                                         {
                                             "type": "Image",
-                                            "url": dataUrl,
+                                            "url": lastDataUrl,
                                             "size": "Large"
                                         }
                                     ]
@@ -348,11 +368,36 @@
                     alert("Webhookへ送信しました");
                 } catch(e) {
                     console.error(e);
-                    alert("Webhook送信に失敗しました (サイズ制限等の可能性があります)");
+                    alert("Webhook送信に失敗しました");
                 }
             }
 
             document.getElementById('statusDisplay').textContent = "Finished";
+        }
+
+        // --- Pagination Logic ---
+        function changePage(delta, broadcastMove = true) {
+            const next = Math.max(0, Math.min(maxPages - 1, currentPage + delta));
+            if (next === currentPage) return;
+
+            // Save current
+            pageData[currentPage] = canvas.toDataURL();
+
+            // Load next
+            currentPage = next;
+            document.getElementById('pageDisplay').textContent = `${currentPage + 1} / ${maxPages}`;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (pageData[currentPage]) {
+                const img = new Image();
+                img.onload = () => ctx.drawImage(img, 0, 0);
+                img.src = pageData[currentPage];
+            }
+
+            if(broadcastMove && mode === 'teacher') {
+                broadcast({ type: 'change_page', pageIndex: currentPage });
+            }
         }
 
         // ------------------
@@ -476,6 +521,18 @@
                 ctx.fillRect(data.x, data.y, data.w, data.h);
             } else if (data.type === 'shape') {
                 drawShapeLocal(data);
+            } else if (data.type === 'change_page') {
+                // Sync Page
+                // Force save current locally just in case? No, viewer is passive.
+                pageData[currentPage] = canvas.toDataURL();
+                currentPage = data.pageIndex;
+                document.getElementById('pageDisplay').textContent = `${currentPage + 1} / ${maxPages}`;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (pageData[currentPage]) {
+                    const img = new Image();
+                    img.onload = () => ctx.drawImage(img, 0, 0);
+                    img.src = pageData[currentPage];
+                }
             }
         }
 

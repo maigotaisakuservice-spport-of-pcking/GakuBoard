@@ -197,7 +197,18 @@
                 // Stop
                 stopSharing();
             } else {
-                // Start
+                // Start - Check Singleton
+                // Note: The Activity ID is constant per class.
+                // We check if 'isPresenting' is true and presenter is NOT us.
+                const doc = await db.collection('activities').doc(activityId).get();
+                if (doc.exists) {
+                    const data = doc.data();
+                    if (data.isPresenting && data.presenterPeerId && data.presenterPeerId !== peer.id) {
+                        alert("既に他の人が画面共有中です。同時に開始することはできません。");
+                        return;
+                    }
+                }
+
                 try {
                     const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
                     myStream = stream;
