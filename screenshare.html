@@ -204,8 +204,10 @@
                 if (doc.exists) {
                     const data = doc.data();
                     if (data.isPresenting && data.presenterPeerId && data.presenterPeerId !== peer.id) {
-                        alert("既に他の人が画面共有中です。同時に開始することはできません。");
-                        return;
+                        if(!confirm("既に他の人が画面共有中です。\n\n強制的に終了させ、あなたが共有を開始しますか？")) {
+                            return;
+                        }
+                        // Takeover: Logic continues below to overwrite
                     }
                 }
 

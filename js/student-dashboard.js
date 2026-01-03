@@ -210,8 +210,11 @@ function selectMood(mood, btn) {
 
 async function checkDailySubmission() {
     try {
+        // Optimized: Fetch only the latest record
         const snap = await db.collection('daily_records')
             .where('studentId', '==', currentUser.uid)
+            .orderBy('createdAt', 'desc')
+            .limit(1)
             .get();
 
         let submittedToday = false;
@@ -220,8 +223,8 @@ async function checkDailySubmission() {
         const todayM = now.getMonth();
         const todayD = now.getDate();
 
-        snap.forEach(doc => {
-            const data = doc.data();
+        if (!snap.empty) {
+            const data = snap.docs[0].data();
             let rDate = data.createdAt ? data.createdAt.toDate() : new Date();
 
             if (rDate.getFullYear() === todayY &&
@@ -229,7 +232,7 @@ async function checkDailySubmission() {
                 rDate.getDate() === todayD) {
                 submittedToday = true;
             }
-        });
+        }
 
         if (submittedToday) {
             document.getElementById('daily-form').classList.add('hidden');

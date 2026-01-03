@@ -477,6 +477,7 @@
         }
 
         async function deleteUserFull(uid) {
+            if (uid === auth.currentUser.uid) return alert("自分自身を削除することはできません");
             if(!confirm("ユーザーと、そのユーザーの記録データを完全に削除しますか？")) return;
             try {
                 await deleteUserAndData(db, uid);
