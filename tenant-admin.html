@@ -18,6 +18,17 @@
         <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded">ログアウト</button>
     </nav>
 
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="fixed inset-0 bg-gray-900 bg-opacity-90 hidden flex items-center justify-center z-50">
+        <div class="bg-white w-full h-full md:w-11/12 md:h-5/6 rounded shadow-lg flex flex-col relative">
+            <div class="bg-gray-800 text-white p-3 flex justify-between items-center rounded-t">
+                <span class="font-bold">生徒画面プレビューモード (操作は無効化されています)</span>
+                <button onclick="closePreview()" class="text-gray-300 hover:text-white text-xl">&times;</button>
+            </div>
+            <iframe id="preview-frame" class="flex-grow w-full border-0 bg-gray-100"></iframe>
+        </div>
+    </div>
+
     <div class="container mx-auto p-8">
 
         <!-- Tabs -->
@@ -127,8 +138,9 @@
                         <label class="block text-xs font-bold mb-1">アイコンURL (任意)</label>
                         <input type="url" id="portal-icon" placeholder="https://..." class="w-full border p-2 rounded">
                     </div>
-                    <div>
-                        <button onclick="addTenantPortalLink()" class="bg-indigo-600 text-white w-full py-2 rounded hover:bg-indigo-700">追加する</button>
+                    <div class="flex gap-2">
+                        <button onclick="addTenantPortalLink()" class="bg-indigo-600 text-white flex-grow py-2 rounded hover:bg-indigo-700">追加する</button>
+                        <button onclick="openPreview()" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">プレビュー</button>
                     </div>
                 </div>
 
@@ -414,6 +426,28 @@
             if(!confirm('削除しますか？')) return;
             await db.collection('portal_links').doc(id).delete();
             loadTenantPortalLinks();
+        }
+
+        // Preview Logic
+        async function openPreview() {
+            // Need a schoolId to simulate the environment. Pick the first school found.
+            try {
+                const snap = await db.collection('schools').where('tenantId', '==', currentTenantId).limit(1).get();
+                if(snap.empty) return alert("学校が作成されていないためプレビューできません");
+
+                const schoolId = snap.docs[0].id;
+                const modal = document.getElementById('preview-modal');
+                const frame = document.getElementById('preview-frame');
+                frame.src = `student-dashboard.html?preview=true&schoolId=${schoolId}`;
+                modal.classList.remove('hidden');
+            } catch(e) {
+                alert("プレビュー準備エラー: " + e.message);
+            }
+        }
+
+        function closePreview() {
+            document.getElementById('preview-modal').classList.add('hidden');
+            document.getElementById('preview-frame').src = '';
         }
     </script>
 </body>

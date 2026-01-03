@@ -300,10 +300,18 @@ async function loadUnifiedPortal(explicitSchoolId = null) {
         tenantId = userDoc.data().tenantId;
     }
 
-    // 1. Tenant Wide (TODO: Add schema for tenant wide apps if needed, assume none or fetch from tenant doc?)
-    // User requested "Tenant Wide" category.
-    // Let's check portal_links where tenantId matches and isTenantWide=true (New field needed or infer)
-    // For now, skip or mock.
+    // 1. Tenant Wide
+    if (tenantId) {
+        try {
+            const tenantSnap = await db.collection('portal_links')
+                .where('tenantId', '==', tenantId)
+                .where('isTenantWide', '==', true)
+                .get();
+            tenantSnap.forEach(doc => renderPortalLink(doc.data(), gridTenant));
+        } catch(e) {
+            console.warn("Tenant apps load failed:", e);
+        }
+    }
 
     // 2. School Wide
     if (schoolId) {

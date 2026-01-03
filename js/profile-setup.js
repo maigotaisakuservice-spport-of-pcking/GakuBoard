@@ -168,11 +168,11 @@ function showProfileModal(userDocRef, userData, db) {
         // Filter logic
         const filtered = schoolClasses.filter(c => {
             if (yearType === 'indefinite') {
-                return c.termType === 'indefinite';
+                // Match explicit indefinite OR type=club
+                return c.termType === 'indefinite' || c.type === 'club';
             } else {
-                // 'current' - Default logic: Match current year or if termType is missing/current
-                // For this prototype, we treat anything NOT indefinite as current.
-                return c.termType !== 'indefinite';
+                // 'current'
+                return c.termType !== 'indefinite' && c.type !== 'club';
             }
         });
 

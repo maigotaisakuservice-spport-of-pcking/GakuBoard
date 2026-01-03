@@ -31,6 +31,22 @@ auth.onAuthStateChanged(async user => {
             // 3. Initial Load
             document.getElementById('loading').classList.add('hidden');
 
+            // Feature Flag Check (Daily Record)
+            try {
+                const schoolDoc = await db.collection('schools').doc(data.schoolId).get();
+                if(schoolDoc.exists && schoolDoc.data().features && schoolDoc.data().features.dailyRecord === false) {
+                    // Disable Daily Record
+                    // Hide Nav
+                    const navBtn = document.querySelector('button[onclick="showSection(\'daily\')"]');
+                    if(navBtn) navBtn.style.display = 'none';
+                    // Hide Widget
+                    const widget = document.getElementById('home-stats');
+                    if(widget && widget.parentElement) widget.parentElement.style.display = 'none';
+                }
+            } catch(e) {
+                console.warn("Feature flag check failed", e);
+            }
+
             // Run Cleanup (Background)
             cleanOldLogs(db, data.schoolId).catch(e => console.error("Cleanup error", e));
 
@@ -512,8 +528,11 @@ async function loadStudentList() {
     }
 
     // 2. Fetch Students
+    // Need tenantId to satisfy rules
+    const tenantId = userDoc.data().tenantId;
     const snap = await db.collection('users')
         .where('schoolId', '==', schoolId)
+        .where('tenantId', '==', tenantId) // Fix permission error
         .where('role', '==', 'student')
         .get();
 
@@ -562,6 +581,15 @@ async function loadStudentList() {
         }
         const clubStr = clubNames.length > 0 ? clubNames.join(', ') : '-';
 
+        // Check if context is club to show Remove button
+        let actionHtml = `<button onclick="editStudent('${s.id}', '${s.name}', '${s.attendanceNumber||''}')" class="bg-gray-200 px-2 py-1 rounded text-xs hover:bg-gray-300">編集</button>`;
+
+        // Find if current context is a club
+        const currentContextClass = availableClasses.find(c => c.id === currentClassId);
+        if(currentContextClass && currentContextClass.type === 'club') {
+            actionHtml += ` <button onclick="removeStudentFromClub('${s.id}', '${currentClassId}')" class="bg-red-100 text-red-600 px-2 py-1 rounded text-xs hover:bg-red-200 ml-1">脱退</button>`;
+        }
+
         const tr = document.createElement('tr');
         tr.className = "border-b hover:bg-gray-50";
         tr.innerHTML = `
@@ -570,11 +598,26 @@ async function loadStudentList() {
             <td class="p-3 text-sm text-gray-600">${clubStr}</td>
             <td class="p-3 text-center text-xs text-gray-400 font-bold">${count > 0 ? count + '回' : '-'}</td>
             <td class="p-3 text-center">
-                <button onclick="editStudent('${s.id}', '${s.name}', '${s.attendanceNumber||''}')" class="bg-gray-200 px-2 py-1 rounded text-xs hover:bg-gray-300">編集</button>
+                ${actionHtml}
             </td>
         `;
         tbody.appendChild(tr);
     });
+}
+
+async function removeStudentFromClub(uid, clubId) {
+    if(!confirm("この生徒を部活から脱退させますか？")) return;
+    try {
+        const doc = await db.collection('users').doc(uid).get();
+        const aff = doc.data().affiliations || [];
+        // Filter out this club
+        const newAff = aff.filter(a => a.classId !== clubId);
+        await db.collection('users').doc(uid).update({ affiliations: newAff });
+        alert("脱退させました");
+        loadStudentList();
+    } catch(e) {
+        alert("エラー: " + e.message);
+    }
 }
 
 function editStudent(uid, name, currentNum) {

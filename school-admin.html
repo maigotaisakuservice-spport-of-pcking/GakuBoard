@@ -150,8 +150,15 @@
                                 <option value="">クラスを選択</option>
                             </select>
                         </div>
+                        <div class="mb-2">
+                            <label class="text-xs font-bold">ロール:</label>
+                            <select id="source-role-select" class="w-full border p-1 rounded text-sm" onchange="loadStudentsForClubAdd()">
+                                <option value="student" selected>生徒</option>
+                                <option value="teacher">先生</option>
+                            </select>
+                        </div>
                         <div class="h-32 overflow-y-auto border bg-white rounded p-2 mb-2" id="student-checklist">
-                            <p class="text-xs text-gray-400">クラスを選択すると生徒が表示されます</p>
+                            <p class="text-xs text-gray-400">クラスを選択するとユーザーが表示されます</p>
                         </div>
                         <button onclick="addMembersToClub()" class="w-full bg-green-600 text-white py-2 rounded text-sm font-bold hover:bg-green-700">選択した生徒を追加</button>
                     </div>
@@ -748,6 +755,7 @@
 
         async function loadStudentsForClubAdd() {
             const classId = document.getElementById('source-class-select').value;
+            const role = document.getElementById('source-role-select').value;
             const container = document.getElementById('student-checklist');
             container.innerHTML = '読み込み中...';
             if(!classId) {
@@ -755,9 +763,11 @@
                 return;
             }
 
+            // Must include tenantId for rules
             const snap = await db.collection('users')
                 .where('classId', '==', classId)
-                .where('role', '==', 'student')
+                .where('tenantId', '==', currentTenantId)
+                .where('role', '==', role)
                 .get();
 
             container.innerHTML = '';
@@ -785,37 +795,52 @@
             const checks = document.querySelectorAll('.student-check:checked');
             if(checks.length === 0) return alert("生徒を選んでください");
 
-            if(!confirm(`${checks.length}人の生徒を部活に追加しますか？`)) return;
+            if(!confirm(`${checks.length}人を部活に追加しますか？`)) return;
 
-            const batch = db.batch();
-            const clubRef = db.collection('classes').doc(clubId); // Club is technically a class doc with type=club
+            // Check duplicates logic: fetch users first (inefficient but safe)
+            // Or rely on arrayUnion. The issue was duplicate entries if object differs.
+            // We standardize the object here.
+            // If user already has {classId: clubId, yearType: 'club'}, arrayUnion does nothing.
+            // If user has {classId: clubId, yearType: 'club', attendanceNumber: '1'}, arrayUnion adds new one.
+            // To fix, we should first REMOVE any existing entry with this classId, then add new one?
+            // Or just check client side.
 
-            // We need to add clubId to user's 'affiliations' array
-            // affiliations: [{classId: '...', yearType: 'club'}]
+            // Let's implement client-side check since we have IDs.
+            // We need to fetch current affiliations for these users.
 
-            // Note: Reading inside loop is bad for batch, but we need current data.
-            // Better to use arrayUnion if possible, but 'affiliations' is array of objects.
-            // Firestore arrayUnion only works for exact object match.
-            // So we just construct the object.
+            // For bulk op, fetching all is heavy.
+            // Let's try to be smart: Use arrayUnion but ensure we don't duplicate logic.
+            // Actually, the user report said "Add multiple times".
+            // We will fetch each user doc to verify. 500 limit is fine for this UI.
 
-            const promises = [];
-            checks.forEach(chk => {
+            const promises = Array.from(checks).map(async chk => {
                 const uid = chk.value;
                 const ref = db.collection('users').doc(uid);
 
-                // We use arrayUnion with a constructed object
-                const p = ref.update({
-                    affiliations: firebase.firestore.FieldValue.arrayUnion({
+                return db.runTransaction(async t => {
+                    const doc = await t.get(ref);
+                    if(!doc.exists) return;
+                    const data = doc.data();
+                    let aff = data.affiliations || [];
+
+                    // Check if already in club
+                    if(aff.some(a => a.classId === clubId)) {
+                        // Already exists, skip or update?
+                        // User wants to prevent duplicate addition.
+                        return; // Skip
+                    }
+
+                    aff.push({
                         classId: clubId,
-                        yearType: 'club' // Distinct from 'current'
-                    })
+                        yearType: 'club'
+                    });
+                    t.update(ref, { affiliations: aff });
                 });
-                promises.push(p);
             });
 
             try {
                 await Promise.all(promises);
-                alert("追加しました");
+                alert("追加しました (既に参加済みのユーザーはスキップされました)");
                 // Clear checks
                 checks.forEach(c => c.checked = false);
             } catch(e) {
