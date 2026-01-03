@@ -429,7 +429,11 @@
             const filterClassId = document.getElementById('filter-class').value;
             tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4">読み込み中...</td></tr>';
             try {
-                let query = db.collection('users').where('schoolId', '==', currentSchoolId);
+                // Ensure tenantId is included to satisfy security rules
+                let query = db.collection('users')
+                    .where('schoolId', '==', currentSchoolId)
+                    .where('tenantId', '==', currentTenantId);
+
                 if (filterClassId) {
                     query = query.where('classId', '==', filterClassId);
                 }
