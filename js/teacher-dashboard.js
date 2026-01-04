@@ -188,8 +188,12 @@ async function loadHomeStats() {
     // Just count daily records for now
     const today = new Date();
     today.setHours(0,0,0,0);
+    const userDoc = await db.collection('users').doc(currentUser.uid).get();
+    const schoolId = userDoc.data().schoolId;
+
     const recordsSnap = await db.collection('daily_records')
         .where('classId', '==', currentClassId)
+        .where('schoolId', '==', schoolId) // Must include for rules
         .where('createdAt', '>=', today)
         .get();
     const recordCount = recordsSnap.size;
@@ -216,8 +220,12 @@ async function loadAbsenteesWidget() {
     const dateInput = document.getElementById('home-absent-date');
     const dateStr = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
 
+    const userDoc = await db.collection('users').doc(currentUser.uid).get();
+    const schoolId = userDoc.data().schoolId;
+
     const snap = await db.collection('attendance')
         .where('classId', '==', currentClassId)
+        .where('schoolId', '==', schoolId) // Must include for rules
         .where('date', '==', dateStr)
         .get();
 
@@ -316,8 +324,12 @@ async function loadDailyRecords() {
     const nextDate = new Date(date);
     nextDate.setDate(date.getDate() + 1);
 
+    const userDoc = await db.collection('users').doc(currentUser.uid).get();
+    const schoolId = userDoc.data().schoolId;
+
     const snap = await db.collection('daily_records')
         .where('classId', '==', currentClassId)
+        .where('schoolId', '==', schoolId) // Must include for rules
         .where('createdAt', '>=', date)
         .where('createdAt', '<', nextDate)
         .orderBy('createdAt', 'desc')
