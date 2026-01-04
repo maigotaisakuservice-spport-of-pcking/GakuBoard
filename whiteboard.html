@@ -199,6 +199,7 @@
 
         // Load initial data
         restoreFromLocal();
+        loadCurrentPageFromMemory();
 
         // ------------------
         // Auth & Init
@@ -849,6 +850,7 @@
             if (mode !== 'teacher') return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             broadcast({ type: 'clear' });
+            saveToLocal(); // Persist cleared state
         }
 
         function toggleStudentDraw() {
