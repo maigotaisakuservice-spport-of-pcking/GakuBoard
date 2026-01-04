@@ -168,8 +168,13 @@
         const storageKey = `wb_local_${classId}_${boardId}`;
 
         function saveToLocal() {
-            pageData[currentPage] = canvas.toDataURL();
-            localStorage.setItem(storageKey, JSON.stringify(pageData));
+            try {
+                pageData[currentPage] = canvas.toDataURL();
+                localStorage.setItem(storageKey, JSON.stringify(pageData));
+            } catch (e) {
+                console.warn("Storage Full", e);
+                // Optionally warn user, but don't crash
+            }
         }
 
         function restoreFromLocal() {

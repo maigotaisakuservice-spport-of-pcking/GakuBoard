@@ -500,18 +500,20 @@ function checkForceProject(classId, boardId, data) {
 
     if (!isAllowed) return;
 
-    // 2. Prevent Loop/Annoyance (Optional: SessionStorage check?)
-    // For "Projection", we usually want it to happen.
-    // If we are already on the whiteboard page, this script isn't running (it's in dashboard).
-    // So simple redirect is fine.
-
-    // However, if the teacher leaves it on, and the student presses "Back", they get sucked in again.
-    // Let's allow that behavior as "Force Project" implies urgency.
-    // But verify we are not in an iframe (Preview Mode).
+    // 2. Prevent Loop in Preview
     if (isPreview) {
         console.log(`[Preview] Force Project detected for board ${boardId}`);
         return;
     }
+
+    // 3. Prevent Rapid Loop (if student just returned from whiteboard)
+    // We can use sessionStorage to flag that we just exited *this* board
+    // But Force Project usually overrides that.
+    // Let's stick to simple redirect for "Urgency".
+    // If we wanted to be nicer, we could check document.referrer
+
+    // Safety: Only redirect if document is visible (tab active) to avoid background loop?
+    if (document.hidden) return;
 
     console.log("Force Project: Redirecting to Whiteboard...");
     window.location.href = `whiteboard.html?classId=${classId}&boardId=${boardId}&mode=student`;
