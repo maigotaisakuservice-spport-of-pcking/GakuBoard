@@ -251,10 +251,11 @@ async function submitDaily() {
     if (!temp) return alert("体温を入れてね！");
     const comment = document.getElementById('daily-comment').value;
 
+    // Use the currently selected context (Class/Club) or fallback to primary
     let targetClassId = primaryClassId;
-    const selector = document.getElementById('daily-class-select');
-    if (!selector.closest('div').classList.contains('hidden')) {
-        targetClassId = selector.value;
+    const contextSelect = document.getElementById('student-context-select');
+    if (contextSelect && contextSelect.value) {
+        targetClassId = contextSelect.value;
     }
 
     if (!targetClassId) return alert("クラスが見つかりません");
@@ -297,10 +298,11 @@ async function loadUnifiedPortal(explicitSchoolId = null) {
     let schoolId = explicitSchoolId;
     let tenantId = null;
 
-    if (!schoolId && !isPreview) {
+    if (!isPreview) {
         const userDoc = await db.collection('users').doc(currentUser.uid).get();
-        schoolId = userDoc.data().schoolId;
-        tenantId = userDoc.data().tenantId;
+        const userData = userDoc.data();
+        schoolId = userData.schoolId;
+        tenantId = userData.tenantId;
     }
 
     // 1. Tenant Wide

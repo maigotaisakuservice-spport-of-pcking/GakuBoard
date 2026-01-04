@@ -135,10 +135,16 @@ ${recordsText}
         const model = config.models.whiteboard || 'gemini-2.5-flash';
         const prompt = `
 Analyze the hand-drawn stroke in this image.
-Identify if it looks like a Rectangle, Circle, Triangle, or Line.
-Return a JSON object with the shape type and normalized coordinates (0-1 range) to recreate it perfectly.
-Format: { "shape": "rectangle", "x": 0.1, "y": 0.1, "width": 0.5, "height": 0.3, "color": "black" }
-If it's just a random scribble, return { "shape": "unknown" }.
+1. If it looks like a geometric shape (Rectangle, Circle, Triangle, Line), return:
+{ "type": "shape", "shape": "rectangle", "x": 0.1, "y": 0.1, "width": 0.5, "height": 0.3, "color": "black" }
+(Coordinates 0-1 range).
+
+2. If it looks like handwritten text, OCR it and return:
+{ "type": "text", "text": "Hello World", "x": 0.1, "y": 0.1, "color": "black", "fontSize": 20 }
+(For fontSize, estimate appropriate size relative to image height assuming image height is 600px).
+
+If unknown/scribble, return { "type": "unknown" }.
+Return only valid JSON.
         `;
 
         const res = await this.callGeminiVision(config, model, prompt, imageBase64);

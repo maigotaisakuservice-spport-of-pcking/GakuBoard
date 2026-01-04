@@ -146,6 +146,15 @@
         const maxPages = 6;
         const pageData = new Array(maxPages).fill(null);
 
+        // Load page content after init if available
+        setTimeout(() => {
+             if(pageData[currentPage]) {
+                 const img = new Image();
+                 img.onload = () => ctx.drawImage(img, 0, 0);
+                 img.src = pageData[currentPage];
+             }
+        }, 500);
+
         // AI Pen State
         let aiStrokePoints = [];
         let aiProcessing = false;
@@ -155,12 +164,41 @@
         let connections = []; // Teacher: list of student conns. Student: [teacherConn]
         let canDraw = (mode === 'teacher'); // Default permission
 
+        // Persistence
+        const storageKey = `wb_local_${classId}_${boardId}`;
+
+        function saveToLocal() {
+            pageData[currentPage] = canvas.toDataURL();
+            localStorage.setItem(storageKey, JSON.stringify(pageData));
+        }
+
+        function restoreFromLocal() {
+            const saved = localStorage.getItem(storageKey);
+            if (saved) {
+                const data = JSON.parse(saved);
+                for(let i=0; i<maxPages; i++) {
+                    if(data[i]) pageData[i] = data[i];
+                }
+            }
+        }
+
         function resizeCanvas() {
+            // Save current content before resize clears it
+            const currentContent = canvas.toDataURL();
+
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight - 50;
+
+            // Restore
+            const img = new Image();
+            img.onload = () => ctx.drawImage(img, 0, 0);
+            img.src = currentContent;
         }
         window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
+        resizeCanvas(); // Initial sizing
+
+        // Load initial data
+        restoreFromLocal();
 
         // ------------------
         // Auth & Init
@@ -311,8 +349,10 @@
             pageData[currentPage] = canvas.toDataURL('image/png');
 
             // 1. Download Local Copies (All pages with content)
+            // User requested "Batch Save". We will just loop.
+            // Note: Some browsers block multiple downloads.
             let savedCount = 0;
-            let lastDataUrl = null; // For webhook cover
+            let imagesForWebhook = [];
 
             for (let i = 0; i < maxPages; i++) {
                 if (pageData[i]) {
@@ -323,23 +363,24 @@
                     a.click();
                     document.body.removeChild(a);
                     savedCount++;
-                    lastDataUrl = pageData[i];
+
+                    imagesForWebhook.push({
+                         "type": "Image",
+                         "url": pageData[i],
+                         "size": "Large"
+                    });
+
                     await new Promise(r => setTimeout(r, 200)); // Delay for browser download limit
                 }
             }
 
-            // 2. Webhook (Base64 - Send Last Active Page or Page 1)
-            // Use Admin-configured URL if available in params/firestore, else use local input
-            // We loaded classDoc in init, let's re-fetch or trust the input if it was pre-filled
+            // 2. Webhook (Base64 - Send All Pages)
             let webhookUrl = document.getElementById('webhook-url').value;
 
-            // If empty, try to fetch from class config one last time?
-            // We already did in init. If user manually cleared it or it wasn't there, we trust the UI.
-
-            if(webhookUrl && lastDataUrl) {
+            if(webhookUrl && imagesForWebhook.length > 0) {
                 document.getElementById('statusDisplay').textContent = "Sending Webhook...";
                 try {
-                    // Adaptive Card with Cover Image
+                    // Adaptive Card with ALL Images
                     const payload = {
                         "type": "message",
                         "attachments": [
@@ -359,15 +400,11 @@
                                         },
                                         {
                                             "type": "TextBlock",
-                                            "text": `計 ${savedCount} 枚のボード画像が端末に保存されました。`,
+                                            "text": `計 ${savedCount} 枚のボード画像が送信されました。`,
                                             "size": "Small",
                                             "wrap": true
                                         },
-                                        {
-                                            "type": "Image",
-                                            "url": lastDataUrl,
-                                            "size": "Large"
-                                        }
+                                        ...imagesForWebhook
                                     ]
                                 }
                             }
@@ -623,6 +660,8 @@
 
         async function endDraw(e) {
             drawing = false;
+            saveToLocal(); // Save on stroke end
+
             if(currentTool === 'ai_pen' && aiStrokePoints.length > 10) {
                 // Process AI
                 await processAIShape();
@@ -698,15 +737,34 @@
                     const finalW = result.width * w;
                     const finalH = result.height * h; // Note: if circle, might be r
 
-                    const shapeData = {
-                        type: 'shape',
-                        shape: result.shape,
-                        x: finalX, y: finalY, w: finalW, h: finalH,
-                        color: currentColor
-                    };
+                    if (result.type === 'shape' || result.shape) {
+                        // Handle Shape (Legacy support for result.shape)
+                        const sType = result.shape || result.type;
 
-                    if (mode === 'teacher') broadcast(shapeData);
-                    drawShapeLocal(shapeData);
+                        const shapeData = {
+                            type: 'shape',
+                            shape: result.shape, // e.g. 'rectangle'
+                            x: finalX, y: finalY, w: finalW, h: finalH,
+                            color: currentColor
+                        };
+
+                        if (mode === 'teacher') broadcast(shapeData);
+                        drawShapeLocal(shapeData);
+
+                    } else if (result.type === 'text') {
+                        // Handle Text
+                        const textData = {
+                            type: 'text',
+                            text: result.text,
+                            x: minX + (result.x * w), // Approximate pos
+                            y: minY + (result.y * h) + (result.fontSize || 20), // Y is usually baseline
+                            color: currentColor,
+                            font: (result.fontSize || 20) + "px sans-serif"
+                        };
+
+                        if (mode === 'teacher') broadcast(textData);
+                        drawTextLocal(textData);
+                    }
                 }
             } catch(e) {
                 console.error(e);
@@ -736,6 +794,12 @@
              }
 
              ctx.stroke();
+        }
+
+        function drawTextLocal(d) {
+            ctx.font = d.font || "20px sans-serif";
+            ctx.fillStyle = d.color;
+            ctx.fillText(d.text, d.x, d.y);
         }
 
         function drawOnCanvas(x0, y0, x1, y1, color, width) {
