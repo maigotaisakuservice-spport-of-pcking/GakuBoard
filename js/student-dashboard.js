@@ -472,9 +472,47 @@ const wbState = {};
 
 function updateWhiteboardList(classId, snap, filterClassId) {
     wbState[classId] = [];
-    snap.forEach(doc => wbState[classId].push({ id: doc.id, ...doc.data() }));
+
+    snap.forEach(doc => {
+        const data = doc.data();
+        wbState[classId].push({ id: doc.id, ...data });
+
+        // Force Project Check
+        if (data.forceProject) {
+            checkForceProject(classId, doc.id, data);
+        }
+    });
 
     renderWhiteboards(filterClassId);
+}
+
+function checkForceProject(classId, boardId, data) {
+    // 1. Check if allowed
+    const uid = currentUser ? currentUser.uid : 'preview_user';
+    let isAllowed = false;
+    if (data.allowedStudents === 'all' || !data.allowedStudents) {
+        isAllowed = true;
+    } else if (Array.isArray(data.allowedStudents) && data.allowedStudents.includes(uid)) {
+        isAllowed = true;
+    }
+
+    if (!isAllowed) return;
+
+    // 2. Prevent Loop/Annoyance (Optional: SessionStorage check?)
+    // For "Projection", we usually want it to happen.
+    // If we are already on the whiteboard page, this script isn't running (it's in dashboard).
+    // So simple redirect is fine.
+
+    // However, if the teacher leaves it on, and the student presses "Back", they get sucked in again.
+    // Let's allow that behavior as "Force Project" implies urgency.
+    // But verify we are not in an iframe (Preview Mode).
+    if (isPreview) {
+        console.log(`[Preview] Force Project detected for board ${boardId}`);
+        return;
+    }
+
+    console.log("Force Project: Redirecting to Whiteboard...");
+    window.location.href = `whiteboard.html?classId=${classId}&boardId=${boardId}&mode=student`;
 }
 
 async function renderWhiteboards(filterClassId) {

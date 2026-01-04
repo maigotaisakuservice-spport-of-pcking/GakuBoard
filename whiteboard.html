@@ -105,7 +105,14 @@
             <p style="color:#888;">読み込み中...</p>
         </div>
 
-        <div style="text-align:right;">
+        <div style="margin-top:10px; border-top:1px solid #eee; padding-top:10px;">
+            <label style="font-weight:bold; color:#e74c3c; cursor:pointer;">
+                <input type="checkbox" id="force-project-check"> 生徒の画面に強制表示する
+            </label>
+            <p style="font-size:0.8em; color:#666;">※ 生徒がダッシュボードを開いている場合、自動的にこのボードに遷移します。</p>
+        </div>
+
+        <div style="text-align:right; margin-top:10px;">
             <button onclick="saveBroadcastSettings()" style="background:#3498db; color:white; border:none; padding:5px 10px; border-radius:3px;">適用</button>
             <button onclick="document.getElementById('broadcast-modal').style.display='none'" style="background:#95a5a6; color:white; border:none; padding:5px 10px; border-radius:3px;">閉じる</button>
         </div>
@@ -283,13 +290,16 @@
                 allowed = Array.from(chks).map(c => c.value);
             }
 
+            const forceProject = document.getElementById('force-project-check').checked;
+
             // Update Board Doc
             await db.collection('classes').doc(classId).collection('active_boards').doc(boardId).update({
-                allowedStudents: allowed
+                allowedStudents: allowed,
+                forceProject: forceProject
             });
 
             document.getElementById('broadcast-modal').style.display = 'none';
-            alert("配信先を更新しました");
+            alert("配信設定を更新しました" + (forceProject ? " (強制表示ON)" : ""));
         }
 
         async function finishAndSend() {
@@ -319,7 +329,13 @@
             }
 
             // 2. Webhook (Base64 - Send Last Active Page or Page 1)
-            const webhookUrl = document.getElementById('webhook-url').value;
+            // Use Admin-configured URL if available in params/firestore, else use local input
+            // We loaded classDoc in init, let's re-fetch or trust the input if it was pre-filled
+            let webhookUrl = document.getElementById('webhook-url').value;
+
+            // If empty, try to fetch from class config one last time?
+            // We already did in init. If user manually cleared it or it wasn't there, we trust the UI.
+
             if(webhookUrl && lastDataUrl) {
                 document.getElementById('statusDisplay').textContent = "Sending Webhook...";
                 try {
