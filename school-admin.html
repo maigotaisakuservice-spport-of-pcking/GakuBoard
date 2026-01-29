@@ -306,21 +306,26 @@
         async function loadGakuTalkGroups() {
             const list = document.getElementById('gakutalk-group-list');
             list.innerHTML = '読み込み中...';
-            const snap = await db.collection('classes').where('schoolId', '==', currentSchoolId).get();
-            list.innerHTML = '';
-            snap.forEach(doc => {
-                const d = doc.data();
-                const div = document.createElement('div');
-                div.className = "p-4 border rounded flex justify-between items-center bg-gray-50 hover:bg-white transition shadow-sm";
-                div.innerHTML = `
-                    <div>
-                        <p class="font-bold text-gray-800">${d.name}</p>
-                        <p class="text-[10px] text-gray-400 uppercase tracking-widest">${d.type === 'club' ? '部活動' : 'クラス'}</p>
-                    </div>
-                    <a href="gakutalk.html" target="_blank" class="bg-indigo-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-indigo-700">管理入室</a>
-                `;
-                list.appendChild(div);
-            });
+            try {
+                const snap = await db.collection('classes').where('schoolId', '==', currentSchoolId).get();
+                list.innerHTML = '';
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    const div = document.createElement('div');
+                    div.className = "p-4 border rounded flex justify-between items-center bg-gray-50 hover:bg-white transition shadow-sm";
+                    div.innerHTML = `
+                        <div>
+                            <p class="font-bold text-gray-800">${d.name}</p>
+                            <p class="text-[10px] text-gray-400 uppercase tracking-widest">${d.type === 'club' ? '部活動' : 'クラス'}</p>
+                        </div>
+                        <a href="gakutalk.html" target="_blank" class="bg-indigo-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-indigo-700">管理入室</a>
+                    `;
+                    list.appendChild(div);
+                });
+            } catch (e) {
+                console.error("Load GakuTalk groups error:", e);
+                list.innerHTML = '<p class="text-red-500 text-sm">読み込みエラー</p>';
+            }
         }
 
         auth.onAuthStateChanged(async user => {
@@ -333,8 +338,8 @@
                          window.location.href = 'login.html';
                          return;
                     }
-                    currentSchoolId = data.schoolId;
-                    currentTenantId = data.tenantId;
+                    currentSchoolId = data.schoolId || null;
+                    currentTenantId = data.tenantId || null;
 
                     // Check AI Config
                     try {
@@ -382,19 +387,21 @@
             const select = document.getElementById('user-class');
             const filterSelect = document.getElementById('filter-class');
 
-            list.innerHTML = '';
+            list.innerHTML = '読み込み中...';
             select.innerHTML = '<option value="">所属なし</option>';
             filterSelect.innerHTML = '<option value="">全クラス</option>';
 
-            // Load regular classes only
-            const snap = await db.collection('classes')
-                .where('schoolId', '==', currentSchoolId)
-                .where('type', '==', 'class') // Filter by type if exists, or assume class if no type
-                .get();
+            try {
+                // Load regular classes only
+                const snap = await db.collection('classes')
+                    .where('schoolId', '==', currentSchoolId)
+                    .where('type', '==', 'class') // Filter by type if exists, or assume class if no type
+                    .get();
 
-            const classes = [];
+                list.innerHTML = '';
+                const classes = [];
 
-            snap.forEach(doc => {
+                snap.forEach(doc => {
                 const data = doc.data();
                 if(data.type === 'club') return; // Should not happen if query is correct, but safe guard
 
@@ -422,26 +429,34 @@
                 filterOpt.value = doc.id;
                 filterOpt.textContent = data.name;
                 filterSelect.appendChild(filterOpt);
-            });
-            window.classListCache = classes;
+                });
+                window.classListCache = classes;
+            } catch (e) {
+                console.error("Load classes error:", e);
+                list.innerHTML = '<li class="py-4 text-red-500 text-sm">読み込みエラー (インデックス未作成の可能性があります)</li>';
+            }
         }
 
         async function createClass() {
             const name = document.getElementById('new-class-name').value;
             if (!name) return;
             try {
-                await db.collection('classes').add({
+                const newClass = {
                     name: name,
-                    type: 'class', // Explicit type
-                    schoolId: currentSchoolId,
-                    tenantId: currentTenantId,
+                    type: 'class',
+                    schoolId: currentSchoolId || null,
+                    tenantId: currentTenantId || null,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                };
+                // Clean undefined
+                Object.keys(newClass).forEach(key => newClass[key] === undefined && delete newClass[key]);
+
+                await db.collection('classes').add(newClass);
                 document.getElementById('new-class-name').value = '';
                 loadClasses();
             } catch (e) {
-                console.error(e);
-                alert('作成失敗');
+                console.error("Create class error:", e);
+                alert('作成失敗: ' + e.message);
             }
         }
 
@@ -816,16 +831,20 @@
             const name = document.getElementById('new-club-name').value;
             if(!name) return;
             try {
-                await db.collection('classes').add({
+                const newClub = {
                     name: name,
                     type: 'club',
-                    schoolId: currentSchoolId,
-                    tenantId: currentTenantId,
+                    schoolId: currentSchoolId || null,
+                    tenantId: currentTenantId || null,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                };
+                Object.keys(newClub).forEach(key => newClub[key] === undefined && delete newClub[key]);
+
+                await db.collection('classes').add(newClub);
                 document.getElementById('new-club-name').value = '';
                 loadClubs();
             } catch(e) {
+                console.error("Create club error:", e);
                 alert("作成失敗: " + e.message);
             }
         }

@@ -72,8 +72,16 @@ service cloud.firestore {
 
     match /classes/{classId} {
       allow read: if isAuthenticated();
-      allow write: if isSchoolAdmin(resource.data.schoolId) || (resource.data == null && isSchoolAdmin(request.resource.data.schoolId))
-                   || isTeacher(classId); // Teachers can update class (add members)
+      allow create: if isSuperAdmin()
+                    || isTenantAdmin(request.resource.data.tenantId)
+                    || isSchoolAdmin(request.resource.data.schoolId);
+      allow update: if isSuperAdmin()
+                    || isTenantAdmin(resource.data.tenantId)
+                    || isSchoolAdmin(resource.data.schoolId)
+                    || isTeacher(classId);
+      allow delete: if isSuperAdmin()
+                    || isTenantAdmin(resource.data.tenantId)
+                    || isSchoolAdmin(resource.data.schoolId);
 
       // Active Boards Subcollection
       match /active_boards/{boardId} {
