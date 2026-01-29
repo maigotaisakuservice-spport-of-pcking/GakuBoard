@@ -6,6 +6,10 @@ let currentAffiliations = [];
 let primaryClassId = null;
 let selectedMood = null;
 
+// Modal Caches
+window.assignmentCache = {};
+window.surveyCache = {};
+
 // NEW: Preview Mode Detection
 const urlParams = new URLSearchParams(window.location.search);
 const isPreview = urlParams.get('preview') === 'true';
@@ -114,6 +118,14 @@ async function resolveAffiliations(userData) {
     }
 }
 
+window.editProfile = function() {
+    if (typeof checkAndShowProfileSetup === 'function') {
+        checkAndShowProfileSetup(currentUser, db, true);
+    } else {
+        console.error("checkAndShowProfileSetup not found");
+    }
+}
+
 window.showStudentSection = function(id) {
     document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
     document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('nav-active', 'bg-blue-50', 'text-blue-700', 'font-bold'));
@@ -180,6 +192,8 @@ async function loadAssignments() {
     }
     for (const doc of snap.docs) {
         const d = doc.data();
+        window.assignmentCache[doc.id] = d;
+
         const subSnap = await db.collection('assignments').doc(doc.id).collection('submissions').where('studentId', '==', currentUser.uid).get();
         const isSubmitted = !subSnap.empty;
         const feedback = isSubmitted ? subSnap.docs[0].data().feedback : null;
@@ -199,7 +213,7 @@ async function loadAssignments() {
                 `<div class="bg-green-50 p-3 rounded-lg text-sm text-green-800">
                     <strong>先生からのコメント:</strong> ${feedback || 'まだありません'}
                 </div>` :
-                `<button onclick="openSubmitModal('${doc.id}', '${d.title}', '${d.description || ''}')" class="w-full bg-blue-600 text-white py-2 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition">提出する</button>`
+                `<button onclick="openSubmitModal('${doc.id}')" class="w-full bg-blue-600 text-white py-2 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition">提出する</button>`
             }
         `;
         list.appendChild(div);
@@ -207,10 +221,12 @@ async function loadAssignments() {
 }
 
 let activeAssignId = null;
-function openSubmitModal(id, title, desc) {
+window.openSubmitModal = function(id) {
+    const d = window.assignmentCache[id];
+    if(!d) return;
     activeAssignId = id;
-    document.getElementById('modal-assign-title').textContent = title;
-    document.getElementById('modal-assign-desc').textContent = desc;
+    document.getElementById('modal-assign-title').textContent = d.title;
+    document.getElementById('modal-assign-desc').textContent = d.description || '';
     document.getElementById('submit-url').value = '';
     document.getElementById('submit-modal').classList.remove('hidden');
 }
@@ -240,6 +256,8 @@ async function loadSurveys() {
     }
     for (const doc of snap.docs) {
         const d = doc.data();
+        window.surveyCache[doc.id] = d;
+
         const respSnap = await db.collection('surveys').doc(doc.id).collection('responses').where('studentId', '==', currentUser.uid).get();
         const isAnswered = !respSnap.empty;
 
@@ -251,25 +269,29 @@ async function loadSurveys() {
                 <span class="text-xs px-2 py-1 rounded font-bold ${isAnswered ? 'bg-gray-100 text-gray-500' : 'bg-blue-100 text-blue-600'}">${isAnswered ? '回答済み' : '未回答'}</span>
             </div>
             <p class="text-sm text-gray-500 mb-4">${d.description || ''}</p>
-            ${!isAnswered ? `<button onclick="openSurveyModal('${doc.id}', '${d.title}', '${d.description||''}', ${JSON.stringify(d.options)})" class="w-full bg-blue-50 text-blue-700 py-2 rounded-xl font-bold hover:bg-blue-100 transition">回答する</button>` : ''}
+            ${!isAnswered ? `<button onclick="openSurveyModal('${doc.id}')" class="w-full bg-blue-50 text-blue-700 py-2 rounded-xl font-bold hover:bg-blue-100 transition">回答する</button>` : ''}
         `;
         list.appendChild(div);
     }
 }
 
 let activeSurveyId = null;
-function openSurveyModal(id, title, desc, options) {
+window.openSurveyModal = function(id) {
+    const d = window.surveyCache[id];
+    if(!d) return;
     activeSurveyId = id;
-    document.getElementById('modal-survey-title').textContent = title;
-    document.getElementById('modal-survey-desc').textContent = desc;
+    document.getElementById('modal-survey-title').textContent = d.title;
+    document.getElementById('modal-survey-desc').textContent = d.description || '';
     const container = document.getElementById('survey-options-container');
     container.innerHTML = '';
-    options.forEach(opt => {
-        const label = document.createElement('label');
-        label.className = "flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-blue-50 transition";
-        label.innerHTML = `<input type="radio" name="survey-opt" value="${opt}" class="w-5 h-5 text-blue-600"> <span class="font-bold text-gray-700">${opt}</span>`;
-        container.appendChild(label);
-    });
+    if(d.options && Array.isArray(d.options)) {
+        d.options.forEach(opt => {
+            const label = document.createElement('label');
+            label.className = "flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-blue-50 transition";
+            label.innerHTML = `<input type="radio" name="survey-opt" value="${opt}" class="w-5 h-5 text-blue-600"> <span class="font-bold text-gray-700">${opt}</span>`;
+            container.appendChild(label);
+        });
+    }
     document.getElementById('survey-resp-modal').classList.remove('hidden');
 }
 
