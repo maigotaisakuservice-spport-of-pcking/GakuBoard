@@ -91,7 +91,7 @@ function renderGroups(groups) {
             <div class="mt-4 flex justify-end">
                 <span class="text-indigo-600 font-bold text-sm flex items-center gap-1">参加する
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="9 5l7 7-7 7" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                     </svg>
                 </span>
             </div>
@@ -283,16 +283,22 @@ async function sendMessage() {
     const text = input.value.trim();
     if (!text || !currentChannelId) return;
 
+    const senderName = (userData && userData.name) || (currentUser && currentUser.displayName) || 'No Name';
+
     input.value = '';
     try {
-        await db.collection('channels').doc(currentChannelId).collection('messages').add({
+        const msgData = {
             senderId: currentUser.uid,
-            senderName: userData.name,
+            senderName: senderName,
             text: text,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        // Clean undefined
+        Object.keys(msgData).forEach(key => msgData[key] === undefined && delete msgData[key]);
+
+        await db.collection('channels').doc(currentChannelId).collection('messages').add(msgData);
     } catch (e) {
-        console.error(e);
+        console.error("SendMessage error:", e);
     }
 }
 

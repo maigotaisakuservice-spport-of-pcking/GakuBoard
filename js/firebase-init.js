@@ -13,11 +13,11 @@ if (typeof firebase === 'undefined') {
     window.auth = firebase.auth();
     window.db = firebase.firestore();
 
-    // Enable offline persistence
-    window.db.enablePersistence()
+    // Enable offline persistence with multi-tab support
+    window.db.enablePersistence({ synchronizeTabs: true })
         .catch((err) => {
             if (err.code == 'failed-precondition') {
-                console.warn('Persistence failed: Multiple tabs open');
+                console.warn('Persistence failed: Multiple tabs open without synchronizeTabs');
             } else if (err.code == 'unimplemented') {
                 console.warn('Persistence not supported by browser');
             }
