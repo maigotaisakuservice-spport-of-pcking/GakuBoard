@@ -1,9 +1,9 @@
 const firebaseConfig = {
-    apiKey: "AIzaSyANgcFldyMvDcsB97l4qbxohrsqSMXKrt4",
-    authDomain: "gaku-board-for-kakera-design.firebaseapp.com",
-    projectId: "gaku-board-for-kakera-design",
-    storageBucket: "gaku-board-for-kakera-design.firebasestorage.app",
-    messagingSenderId: "972280769074",
-    appId: "1:972280769074:web:13c92dbf39c591d0476a2b",
-    measurementId: "G-NYVTRWBX7B"
+  apiKey: "AIzaSyBoYqP9IwGyvPAkmfFeaVlXkCHAvXIP7wQ",
+  authDomain: "gakuboard.firebaseapp.com",
+  projectId: "gakuboard",
+  storageBucket: "gakuboard.firebasestorage.app",
+  messagingSenderId: "503011631132",
+  appId: "1:503011631132:web:ddb27d76d139598e4bbfd9",
+  measurementId: "G-KQKC74WGPF"
 };

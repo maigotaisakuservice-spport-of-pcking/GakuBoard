@@ -251,13 +251,27 @@ function loadMessages(chanId) {
 
                 const time = data.createdAt ? data.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
 
-                div.innerHTML = `
-                    <div class="max-w-xs md:max-w-md ${isMe ? 'bg-indigo-600 text-white rounded-l-xl rounded-tr-xl' : 'bg-white border text-gray-800 rounded-r-xl rounded-tl-xl'} p-3 shadow-sm relative">
-                        ${!isMe ? `<p class="text-xs font-bold text-indigo-600 mb-1">${data.senderName}</p>` : ''}
-                        <p class="text-sm whitespace-pre-wrap">${data.text}</p>
-                        <p class="text-right text-xs mt-1 ${isMe ? 'text-indigo-200' : 'text-gray-400'}">${time}</p>
-                    </div>
-                `;
+                const wrapper = document.createElement('div');
+                wrapper.className = `max-w-xs md:max-w-md ${isMe ? 'bg-indigo-600 text-white rounded-l-xl rounded-tr-xl' : 'bg-white border text-gray-800 rounded-r-xl rounded-tl-xl'} p-3 shadow-sm relative`;
+
+                if (!isMe) {
+                    const name = document.createElement('p');
+                    name.className = "text-xs font-bold text-indigo-600 mb-1";
+                    name.textContent = data.senderName;
+                    wrapper.appendChild(name);
+                }
+
+                const msgBody = document.createElement('p');
+                msgBody.className = "text-sm whitespace-pre-wrap";
+                msgBody.textContent = data.text;
+                wrapper.appendChild(msgBody);
+
+                const timeEl = document.createElement('p');
+                timeEl.className = `text-right text-xs mt-1 ${isMe ? 'text-indigo-200' : 'text-gray-400'}`;
+                timeEl.textContent = time;
+                wrapper.appendChild(timeEl);
+
+                div.appendChild(wrapper);
                 container.appendChild(div);
             });
             container.scrollTop = container.scrollHeight;

@@ -13,13 +13,13 @@ let isTeacher = mode === 'teacher';
 
 const peers = {}; // pid -> call
 let isMicOn = true;
-let isCamOn = isTeacher; // Camera ON by default for teachers, OFF for students
+let isCamOn = isTeacher;
 let isSharing = false;
 
-// Optimization for 38+ participants:
-// 1. Only Teachers and "Active Speakers" (who requested) send video.
-// 2. Everyone else is audio-only.
-// 3. This reduces bandwidth significantly.
+// Optimization logic:
+// 38 people mesh is impossible. We implement "Teacher/Speaker Broadcast" logic.
+// All students start with camera OFF.
+// Only the Teacher and those with camera explicitly ON send video.
 
 auth.onAuthStateChanged(async user => {
     if (user) {
@@ -34,7 +34,7 @@ auth.onAuthStateChanged(async user => {
 async function init() {
     document.getElementById('room-name').textContent = "接続準備中...";
     try {
-        // Start with audio always, video if teacher or explicitly requested
+        // Reduced resolution for scalability
         myStream = await navigator.mediaDevices.getUserMedia({
             video: isCamOn ? { width: 426, height: 240, frameRate: 15 } : false,
             audio: true
@@ -96,13 +96,12 @@ function addVideoStream(pid, stream) {
     const nameTag = document.createElement('div');
     nameTag.className = "name-tag"; nameTag.textContent = "...";
 
-    db.collection('meetings').doc(channelId).collection('participants').doc(pid).get().then(doc => {
+    db.collection('meetings').doc(channelId).collection('participants').doc(pid).onSnapshot(doc => {
         if (doc.exists) {
             const data = doc.data();
             nameTag.textContent = data.isTeacher ? `[先生] ${data.name}` : data.name;
             if(data.isTeacher) wrapper.classList.add('border-2', 'border-yellow-400');
-            // If participant has camera OFF, hide video element to save rendering power
-            if(!data.isCameraOn) video.style.display = 'none';
+            video.style.display = data.isCameraOn ? 'block' : 'none';
         }
     });
     wrapper.appendChild(video); wrapper.appendChild(nameTag); grid.appendChild(wrapper);
@@ -123,35 +122,56 @@ function toggleMic() {
 
 async function toggleCam() {
     isCamOn = !isCamOn;
-
-    // Logic change: to TRULY save bandwidth, we stop/start the track
     if (isCamOn) {
         try {
             const videoStream = await navigator.mediaDevices.getUserMedia({ video: { width: 426, height: 240, frameRate: 15 } });
             const videoTrack = videoStream.getVideoTracks()[0];
             myStream.addTrack(videoTrack);
-            replaceStream(myStream);
         } catch(e) { isCamOn = false; return alert("カメラを起動できません"); }
     } else {
         myStream.getVideoTracks().forEach(t => { t.stop(); myStream.removeTrack(t); });
-        replaceStream(myStream);
     }
-
+    replaceStream(myStream);
     document.getElementById('local-video').srcObject = myStream;
     document.getElementById('btn-cam').classList.toggle('bg-red-600', !isCamOn);
     document.getElementById('icon-cam').textContent = isCamOn ? '📹' : '📵';
     updatePresence({ isCameraOn: isCamOn });
 }
 
+async function toggleShare() {
+    if (isSharing) {
+        // Stop sharing
+        myStream.getVideoTracks().forEach(t => { t.stop(); myStream.removeTrack(t); });
+        isSharing = false;
+        document.getElementById('btn-share').classList.remove('bg-indigo-600');
+        // If camera was on, restart it, else just go audio-only
+        if (isCamOn) {
+            isCamOn = false; toggleCam(); // Re-toggle will do it
+        } else {
+            replaceStream(myStream);
+        }
+    } else {
+        try {
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const screenTrack = screenStream.getVideoTracks()[0];
+            // Remove existing video tracks if any
+            myStream.getVideoTracks().forEach(t => { t.stop(); myStream.removeTrack(t); });
+            myStream.addTrack(screenTrack);
+            replaceStream(myStream);
+            isSharing = true;
+            document.getElementById('btn-share').classList.add('bg-indigo-600');
+            screenTrack.onended = () => { if(isSharing) toggleShare(); };
+        } catch (e) { console.error(e); }
+    }
+    document.getElementById('local-video').srcObject = myStream;
+}
+
 function replaceStream(newStream) {
     Object.values(peers).forEach(call => {
-        const senders = call.peerConnection.getSenders();
         const videoTrack = newStream.getVideoTracks()[0];
-        const sender = senders.find(s => s.track && s.track.kind === 'video');
+        const sender = call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
         if(sender && videoTrack) sender.replaceTrack(videoTrack);
         else if (videoTrack) call.peerConnection.addTrack(videoTrack, newStream);
-        // Note: removeTrack is harder to sync in P2P without renegotiation,
-        // but replaceTrack with null or stopping track is effective.
     });
 }
 
