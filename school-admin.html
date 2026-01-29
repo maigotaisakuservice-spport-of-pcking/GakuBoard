@@ -25,8 +25,9 @@
         <div class="flex border-b border-gray-300 mb-6">
             <button onclick="switchTab('manage')" id="tab-manage" class="px-6 py-2 bg-white border-t border-l border-r rounded-t text-green-700 font-bold">クラス・ユーザー管理</button>
             <button onclick="switchTab('clubs')" id="tab-clubs" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">部活動管理</button>
-            <button onclick="switchTab('portal')" id="tab-portal" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">学習ポータル管理 (全体)</button>
-            <button onclick="switchTab('alerts')" id="tab-alerts" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white text-red-600">⚠️ 要確認 (健康観察)</button>
+            <button onclick="switchTab('portal')" id="tab-portal" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">学習ポータル管理</button>
+            <button onclick="switchTab('gakutalk')" id="tab-gakutalk" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white">GAKU-Talk管理</button>
+            <button onclick="switchTab('alerts')" id="tab-alerts" class="px-6 py-2 bg-gray-200 text-gray-600 hover:bg-white text-red-600">⚠️ 要確認</button>
         </div>
 
         <div id="school-info" class="mb-8 p-4 bg-white rounded shadow">
@@ -196,6 +197,17 @@
             </div>
         </div>
 
+        <!-- TAB: GAKUTALK -->
+        <div id="content-gakutalk" class="hidden">
+            <div class="bg-white p-6 rounded shadow mb-8">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">GAKU-Talk 管理</h2>
+                <p class="text-sm text-gray-500 mb-6">全クラス・部活動のチャットルームにアクセスできます。</p>
+                <div id="gakutalk-group-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Groups -->
+                </div>
+            </div>
+        </div>
+
         <!-- TAB: PORTAL & PREVIEW -->
         <div id="content-portal" class="hidden">
             <div class="bg-white p-6 rounded shadow mb-8">
@@ -270,8 +282,9 @@
 
         // Tab Switching
         function switchTab(tabId) {
-            ['manage', 'clubs', 'portal', 'alerts'].forEach(t => {
-                document.getElementById(`content-${t}`).classList.add('hidden');
+            ['manage', 'clubs', 'portal', 'alerts', 'gakutalk'].forEach(t => {
+                const el = document.getElementById(`content-${t}`);
+                if(el) el.classList.add('hidden');
                 const btn = document.getElementById(`tab-${t}`);
                 btn.classList.remove('bg-white', 'text-green-700', 'font-bold', 'border-t', 'border-l', 'border-r', 'rounded-t');
                 btn.classList.add('bg-gray-200', 'text-gray-600');
@@ -283,10 +296,31 @@
 
             if(tabId === 'portal') loadSchoolPortalLinks();
             if(tabId === 'alerts') loadAlerts();
+            if(tabId === 'gakutalk') loadGakuTalkGroups();
             if(tabId === 'clubs') {
                 loadClubs();
                 loadClassesForClub(); // Populate source dropdown
             }
+        }
+
+        async function loadGakuTalkGroups() {
+            const list = document.getElementById('gakutalk-group-list');
+            list.innerHTML = '読み込み中...';
+            const snap = await db.collection('classes').where('schoolId', '==', currentSchoolId).get();
+            list.innerHTML = '';
+            snap.forEach(doc => {
+                const d = doc.data();
+                const div = document.createElement('div');
+                div.className = "p-4 border rounded flex justify-between items-center bg-gray-50 hover:bg-white transition shadow-sm";
+                div.innerHTML = `
+                    <div>
+                        <p class="font-bold text-gray-800">${d.name}</p>
+                        <p class="text-[10px] text-gray-400 uppercase tracking-widest">${d.type === 'club' ? '部活動' : 'クラス'}</p>
+                    </div>
+                    <a href="gakutalk.html" target="_blank" class="bg-indigo-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-indigo-700">管理入室</a>
+                `;
+                list.appendChild(div);
+            });
         }
 
         auth.onAuthStateChanged(async user => {

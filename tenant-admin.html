@@ -42,10 +42,18 @@
             <div id="tenant-info" class="mb-8 p-4 bg-white rounded shadow flex justify-between items-center">
                 <h2 class="text-xl font-bold text-gray-800">読み込み中...</h2>
 
-                <!-- AI Toggle for Tenant Admin -->
-                <div id="ai-toggle-container" class="hidden flex items-center bg-gray-50 px-4 py-2 rounded border">
-                     <span class="font-bold text-gray-700 mr-3">AI機能 (全校):</span>
-                     <button id="btn-ai-toggle" onclick="toggleTenantAI()" class="bg-gray-400 text-white px-3 py-1 rounded text-sm font-bold">OFF</button>
+                <div class="flex gap-2">
+                    <!-- AI Toggle for Tenant Admin -->
+                    <div id="ai-toggle-container" class="hidden flex items-center bg-gray-50 px-4 py-2 rounded border">
+                        <span class="font-bold text-gray-700 mr-3">AI機能:</span>
+                        <button id="btn-ai-toggle" onclick="toggleTenantAI()" class="bg-gray-400 text-white px-3 py-1 rounded text-sm font-bold">OFF</button>
+                    </div>
+
+                    <!-- GAKU-Talk Toggle -->
+                    <div id="gakutalk-toggle-container" class="flex items-center bg-gray-50 px-4 py-2 rounded border">
+                        <span class="font-bold text-gray-700 mr-3">GAKU-Talk:</span>
+                        <button id="btn-gakutalk-toggle" onclick="toggleGakuTalk()" class="bg-gray-400 text-white px-3 py-1 rounded text-sm font-bold">OFF</button>
+                    </div>
                 </div>
             </div>
 
@@ -213,6 +221,36 @@
                     const isUsageOn = data.aiSettings.usageEnabled === true;
                     updateAIToggleUI(isUsageOn);
                 }
+
+                // GAKU-Talk Settings check
+                const isGakuTalkOn = data.gakutalkEnabled === true;
+                updateGakuTalkToggleUI(isGakuTalkOn);
+            }
+        }
+
+        function updateGakuTalkToggleUI(isOn) {
+            const btn = document.getElementById('btn-gakutalk-toggle');
+            if(isOn) {
+                btn.textContent = "ON";
+                btn.className = "bg-green-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-green-700";
+            } else {
+                btn.textContent = "OFF";
+                btn.className = "bg-gray-400 text-white px-3 py-1 rounded text-sm font-bold hover:bg-gray-500";
+            }
+        }
+
+        async function toggleGakuTalk() {
+            const btn = document.getElementById('btn-gakutalk-toggle');
+            const currentState = btn.textContent === "ON";
+            const newState = !currentState;
+
+            try {
+                await db.collection('tenants').doc(currentTenantId).set({
+                    gakutalkEnabled: newState
+                }, { merge: true });
+                updateGakuTalkToggleUI(newState);
+            } catch(e) {
+                alert("更新失敗: " + e.message);
             }
         }
 
