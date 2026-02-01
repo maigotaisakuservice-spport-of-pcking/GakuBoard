@@ -165,14 +165,16 @@ async function loadMaterials() {
     }
     snap.forEach(doc => {
         const d = doc.data();
+        const url = formatURL(d.url);
         const div = document.createElement('div');
-        div.className = "bg-white p-4 rounded-xl shadow-sm border border-blue-50 flex items-center justify-between group hover:shadow-md transition";
+        div.className = "bg-white p-4 rounded-xl shadow-sm border border-blue-50 flex items-center justify-between group hover:shadow-md transition cursor-pointer";
+        div.onclick = () => { if(url) window.open(url, '_blank'); };
         div.innerHTML = `
             <div class="flex items-center gap-3">
                 <span class="text-2xl">📄</span>
                 <div>
                     <h4 class="font-bold text-gray-800">${d.title}</h4>
-                    <a href="${d.url}" target="_blank" class="text-xs text-blue-500 hover:underline">資料を開く</a>
+                    <span class="text-xs text-blue-500 group-hover:underline">資料を開く</span>
                 </div>
             </div>
             <span class="text-blue-200 group-hover:text-blue-500 transition">→</span>
@@ -358,11 +360,21 @@ async function loadUnifiedPortal(schoolId) {
 }
 
 function renderPortalLink(d, container) {
+    const url = formatURL(d.url);
     const a = document.createElement('a');
-    a.href = isPreview ? '#' : d.url; a.target = "_blank";
+    a.href = url || '#';
+    if(url) a.target = "_blank";
     a.className = "bg-white p-4 rounded-2xl shadow-sm border border-blue-50 flex flex-col items-center hover:shadow-md transition transform hover:-translate-y-1";
     a.innerHTML = `<img src="${d.iconUrl || 'https://via.placeholder.com/64'}" class="w-12 h-12 mb-2 rounded-xl object-cover shadow-sm"><span class="text-[10px] font-bold text-center leading-tight text-gray-700">${d.title}</span>`;
     container.appendChild(a);
+}
+
+function formatURL(url) {
+    if(!url) return "";
+    const trimmed = url.trim();
+    if(!trimmed) return "";
+    if(trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+    return 'https://' + trimmed;
 }
 
 function loadUnifiedActivities() {
