@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>GAKU-Board デモ体験</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto p-8">
+        <h1 class="text-4xl font-bold text-center mb-8 text-indigo-700">GAKU-Board デモ体験</h1>
+        <p class="text-center text-gray-600 mb-12">ログインや登録なしで、GAKU-Boardの主要機能を体験できます。</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Whiteboard -->
+            <div class="bg-white p-6 rounded-xl shadow-lg hover:shadow-2xl transition transform hover:-translate-y-1">
+                <div class="text-4xl mb-4 text-center">🎨</div>
+                <h2 class="text-2xl font-bold mb-2 text-center">リアルタイム<br>ホワイトボード</h2>
+                <p class="text-gray-500 mb-4 text-sm">先生と生徒が同じキャンバスに書き込める機能です。PeerJSによるP2P通信を体験できます。</p>
+                <a href="whiteboard.html" class="block bg-indigo-600 text-white text-center py-2 rounded hover:bg-indigo-700 font-bold">試してみる</a>
+            </div>
+
+            <!-- Screen Share -->
+            <div class="bg-white p-6 rounded-xl shadow-lg hover:shadow-2xl transition transform hover:-translate-y-1">
+                <div class="text-4xl mb-4 text-center">📺</div>
+                <h2 class="text-2xl font-bold mb-2 text-center">強制画面共有</h2>
+                <p class="text-gray-500 mb-4 text-sm">先生の画面を生徒のデバイスに強制的に表示させます。授業への集中を促す強力なツールです。</p>
+                <a href="screenshare.html" class="block bg-green-600 text-white text-center py-2 rounded hover:bg-green-700 font-bold">試してみる</a>
+            </div>
+
+            <!-- Dashboard Mock -->
+            <div class="bg-white p-6 rounded-xl shadow-lg hover:shadow-2xl transition transform hover:-translate-y-1">
+                <div class="text-4xl mb-4 text-center">📊</div>
+                <h2 class="text-2xl font-bold mb-2 text-center">ダッシュボード<br>(モックアップ)</h2>
+                <p class="text-gray-500 mb-4 text-sm">「毎日の記録」や「お知らせ」が見られる生徒/先生用画面のイメージです（静的プレビュー）。</p>
+                <a href="dashboard.html" class="block bg-yellow-500 text-white text-center py-2 rounded hover:bg-yellow-600 font-bold">試してみる</a>
+            </div>
+        </div>
+
+        <div class="mt-12 text-center">
+            <a href="../index.html" class="text-gray-500 hover:text-gray-800 underline">トップページに戻る</a>
+        </div>
+    </div>
+</body>
+</html>

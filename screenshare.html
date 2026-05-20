@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>画面共有 - GAKU-Board</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+    <style>
+        #fullscreen-viewer {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: black; z-index: 9000; display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+        }
+        video { max-width: 100%; max-height: 100%; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col">
+
+    <header class="p-4 bg-gray-800 flex justify-between items-center">
+        <div>
+            <h1 class="text-xl font-bold">GAKU-Board 画面共有</h1>
+            <p id="status" class="text-xs text-gray-400">接続待機中...</p>
+        </div>
+        <div id="controls" class="flex gap-2">
+            <!-- Buttons injected by JS -->
+        </div>
+    </header>
+
+    <main class="flex-grow relative flex items-center justify-center">
+        <div id="placeholder" class="text-gray-500 text-center">
+            <p class="text-2xl mb-2">待機中</p>
+            <p>共有が開始されるとここに表示されます</p>
+        </div>
+    </main>
+
+    <!-- Fullscreen Modal -->
+    <div id="fullscreen-viewer">
+        <div class="absolute top-4 right-4 z-50">
+            <button onclick="closeViewer()" class="bg-red-600 px-4 py-2 rounded text-white font-bold opacity-50 hover:opacity-100 transition">閉じる</button>
+        </div>
+        <video id="remote-video" autoplay playsinline></video>
+        <p class="text-white mt-2">画面共有中...</p>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const classId = urlParams.get('classId');
+        const mode = urlParams.get('mode'); // 'teacher' or 'student'
+        const activityId = `screenshare_${classId}`;
+
+        let peer = null;
+        let myStream = null;
+        let currentCall = null;
+        let isSharing = false;
+
+        // Initialize
+        if (!classId || !mode) {
+            alert("URLパラメータが不足しています");
+            window.location.href = 'login.html';
+        }
+
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                initPeer(user.uid);
+                setupFirestoreListener();
+                setupUI();
+            } else {
+                window.location.href = 'login.html';
+            }
+        });
+
+        function initPeer(uid) {
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                secure: true,
+                // Teacher has fixed ID for easier fallback, but we use Firestore for signaling current presenter
+                // Actually, let's just use random IDs and sync via Firestore
+            });
+
+            peer.on('open', id => {
+                console.log('My Peer ID:', id);
+                document.getElementById('status').textContent = `接続完了 (ID: ${id})`;
+
+                // If I am teacher, I might want to update my ID somewhere?
+                // Or just wait for actions.
+            });
+
+            peer.on('call', call => {
+                // Incoming call (View stream)
+                call.answer();
+                call.on('stream', stream => {
+                    showStream(stream);
+                });
+                currentCall = call;
+            });
+        }
+
+        // Firestore Signaling for "Who is presenting?"
+        function setupFirestoreListener() {
+            db.collection('activities').doc(activityId).onSnapshot(doc => {
+                if (!doc.exists) return;
+                const data = doc.data();
+
+                // Permission Check for Student
+                if (mode === 'student') {
+                    const btn = document.getElementById('btn-student-share');
+                    if (btn) {
+                        if (data.studentCanShare) {
+                            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                            btn.disabled = false;
+                        } else {
+                            btn.classList.add('opacity-50', 'cursor-not-allowed');
+                            btn.disabled = true;
+                        }
+                    }
+                }
+
+                // Connect to Presenter if it's not me
+                if (data.presenterPeerId && data.presenterPeerId !== peer.id && data.isPresenting) {
+                    // Check if already connected or calling
+                    if (currentCall && currentCall.peer === data.presenterPeerId && currentCall.open) return;
+
+                    console.log("Requesting stream from presenter:", data.presenterPeerId);
+
+                    // Establish Data Connection to request stream
+                    // Wait a bit to ensure peer is ready?
+                    setTimeout(() => {
+                        const con = peer.connect(data.presenterPeerId);
+                        con.on('open', () => {
+                            con.send({ type: 'request_stream', peerId: peer.id });
+                        });
+                        con.on('error', e => console.error("Connection error:", e));
+                    }, 1000);
+
+                } else if (!data.isPresenting) {
+                    closeViewer();
+                }
+            });
+
+            // If I am presenter, listen for connection requests to add to call list
+            // Done in peer.on('connection')
+             peer.on('connection', conn => {
+                conn.on('data', data => {
+                    if (data.type === 'request_stream' && isSharing && myStream) {
+                        console.log("Calling back viewer:", data.peerId);
+                        peer.call(data.peerId, myStream);
+                    }
+                });
+            });
+        }
+
+        // Cleanup on teacher exit
+        if (mode === 'teacher') {
+            window.addEventListener('beforeunload', () => {
+                // Update status to false, but keep doc (Persistent Room)
+                db.collection('activities').doc(activityId).update({ isPresenting: false });
+            });
+
+            // Reset on load (ensure clean state)
+            db.collection('activities').doc(activityId).set({ isPresenting: false }, { merge: true });
+        }
+
+        function setupUI() {
+            const controls = document.getElementById('controls');
+            if (mode === 'teacher') {
+                controls.innerHTML = `
+                    <button onclick="toggleShare()" id="btn-share" class="bg-blue-600 px-4 py-2 rounded font-bold">画面共有を開始</button>
+                    <button onclick="togglePermission()" id="btn-perm" class="bg-gray-600 px-4 py-2 rounded text-sm">生徒の共有を許可: OFF</button>
+                `;
+            } else {
+                controls.innerHTML = `
+                    <button onclick="toggleShare()" id="btn-student-share" disabled class="bg-green-600 px-4 py-2 rounded font-bold opacity-50 cursor-not-allowed">画面共有する</button>
+                `;
+
+                // Student listener for session end
+                db.collection('activities').doc(activityId).onSnapshot(doc => {
+                    const data = doc.data();
+                    if (!data || !data.isPresenting) {
+                         alert("先生が共有を終了しました");
+                         window.close();
+                         // Or redirect back
+                         window.location.href = 'student-dashboard.html';
+                    }
+                });
+            }
+        }
+
+        async function toggleShare() {
+            if (isSharing) {
+                // Stop
+                stopSharing();
+            } else {
+                // Start - Check Singleton
+                // Note: The Activity ID is constant per class.
+                // We check if 'isPresenting' is true and presenter is NOT us.
+                const doc = await db.collection('activities').doc(activityId).get();
+                if (doc.exists) {
+                    const data = doc.data();
+                    if (data.isPresenting && data.presenterPeerId && data.presenterPeerId !== peer.id) {
+                        if(!confirm("既に他の人が画面共有中です。\n\n強制的に終了させ、あなたが共有を開始しますか？")) {
+                            return;
+                        }
+                        // Takeover: Logic continues below to overwrite
+                    }
+                }
+
+                try {
+                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                    myStream = stream;
+                    isSharing = true;
+
+                    const btn = document.getElementById(mode === 'teacher' ? 'btn-share' : 'btn-student-share');
+                    btn.textContent = "共有を停止";
+                    btn.classList.replace('bg-blue-600', 'bg-red-600');
+                    btn.classList.replace('bg-green-600', 'bg-red-600');
+
+                    // Update Firestore to notify others
+                    await db.collection('activities').doc(activityId).set({
+                        presenterPeerId: peer.id,
+                        isPresenting: true
+                    }, { merge: true });
+
+                    // Show local preview?
+                    // Optional.
+
+                    stream.getVideoTracks()[0].onended = () => stopSharing();
+
+                } catch (e) {
+                    console.error(e);
+                    alert("共有に失敗しました");
+                }
+            }
+        }
+
+        async function stopSharing() {
+            if (myStream) myStream.getTracks().forEach(t => t.stop());
+            isSharing = false;
+            myStream = null;
+
+            const btn = document.getElementById(mode === 'teacher' ? 'btn-share' : 'btn-student-share');
+            btn.textContent = mode === 'teacher' ? "画面共有を開始" : "画面共有する";
+            btn.classList.replace('bg-red-600', mode === 'teacher' ? 'bg-blue-600' : 'bg-green-600');
+
+            await db.collection('activities').doc(activityId).set({
+                isPresenting: false
+            }, { merge: true });
+        }
+
+        async function togglePermission() {
+            const btn = document.getElementById('btn-perm');
+            const isOff = btn.textContent.includes('OFF');
+            const newState = isOff;
+
+            await db.collection('activities').doc(activityId).set({
+                studentCanShare: newState
+            }, { merge: true });
+
+            btn.textContent = `生徒の共有を許可: ${newState ? 'ON' : 'OFF'}`;
+            btn.className = newState ? "bg-green-600 px-4 py-2 rounded text-sm" : "bg-gray-600 px-4 py-2 rounded text-sm";
+        }
+
+        function showStream(stream) {
+            const viewer = document.getElementById('fullscreen-viewer');
+            const video = document.getElementById('remote-video');
+            video.srcObject = stream;
+            viewer.style.display = 'flex';
+        }
+
+        function closeViewer() {
+            document.getElementById('fullscreen-viewer').style.display = 'none';
+            document.getElementById('remote-video').srcObject = null;
+        }
+
+    </script>
+</body>
+</html>

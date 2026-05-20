@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>デモ: 画面共有</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center p-4">
+
+    <h1 class="text-2xl font-bold mb-4">デモ: 強制画面共有</h1>
+
+    <div class="bg-gray-800 p-6 rounded shadow-lg w-full max-w-md mb-8">
+        <label class="block mb-2 text-sm text-gray-400">部屋名 (ユニークな名前を入力)</label>
+        <div class="flex gap-2 mb-4">
+            <input type="text" id="roomName" value="demo1" class="bg-gray-700 border border-gray-600 p-2 rounded flex-grow text-white">
+        </div>
+
+        <div class="flex flex-col gap-4">
+            <button onclick="startHost()" class="bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold">
+                📡 先生(ホスト)として共有開始
+            </button>
+            <button onclick="startGuest()" class="bg-green-600 hover:bg-green-700 py-2 rounded font-bold">
+                📺 生徒として待機
+            </button>
+        </div>
+    </div>
+
+    <div id="video-container" class="hidden fixed top-0 left-0 w-full h-full bg-black z-50 flex items-center justify-center">
+        <video id="remoteVideo" autoplay playsinline class="max-w-full max-h-full"></video>
+        <button onclick="closeVideo()" class="absolute top-4 right-4 bg-red-600 px-4 py-2 rounded text-sm">閉じる</button>
+    </div>
+
+    <script>
+        let peer = null;
+
+        function startHost() {
+            const room = document.getElementById('roomName').value;
+            const id = `gaku-demo-screen-${room}`;
+
+            peer = new Peer(id);
+            peer.on('open', async myId => {
+                alert(`共有を開始します。生徒は部屋名「${room}」で参加してください。`);
+                try {
+                    const stream = await navigator.mediaDevices.getDisplayMedia({video:true});
+                    peer.on('call', call => {
+                        call.answer(stream);
+                    });
+                } catch(e) {
+                    alert("画面共有がキャンセルされました");
+                }
+            });
+            peer.on('error', e => alert("エラー: " + e.message));
+        }
+
+        function startGuest() {
+            const room = document.getElementById('roomName').value;
+            const hostId = `gaku-demo-screen-${room}`;
+
+            peer = new Peer();
+            peer.on('open', () => {
+                alert("接続を試みています...");
+                // Dummy stream needed to answer? No, call needs stream?
+                // PeerJS: To receive, we connect? No, usually Host calls Guest.
+                // BUT in this simple demo, Guest calls Host?
+                // If Guest calls Host, Guest provides stream?
+                // Correct way: Guest calls Host. Host answers with Stream.
+                const call = peer.call(hostId, createEmptyStream());
+
+                call.on('stream', stream => {
+                    const video = document.getElementById('remoteVideo');
+                    document.getElementById('video-container').classList.remove('hidden');
+                    video.srcObject = stream;
+                });
+
+                call.on('error', e => alert("接続エラー: " + e));
+            });
+        }
+
+        function createEmptyStream() {
+            const ctx = document.createElement('canvas').getContext('2d');
+            return ctx.createMediaStreamDestination().stream;
+        }
+
+        function closeVideo() {
+            document.getElementById('video-container').classList.add('hidden');
+            document.getElementById('remoteVideo').srcObject = null;
+        }
+    </script>
+</body>
+</html>

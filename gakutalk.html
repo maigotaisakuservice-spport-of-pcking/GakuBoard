@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>GAKU-Talk</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+    <style>
+        .chat-container { height: calc(100vh - 180px); }
+        .group-card:hover { transform: translateY(-2px); }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col overflow-hidden">
+
+    <!-- Navbar -->
+    <nav class="bg-indigo-700 text-white p-4 flex justify-between items-center shadow-md z-10">
+        <div class="flex items-center gap-4">
+            <button onclick="goBack()" class="hover:bg-indigo-600 p-2 rounded-full transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+            </button>
+            <h1 class="text-xl font-bold">GAKU-Talk</h1>
+        </div>
+        <div id="user-info" class="text-sm font-medium"></div>
+    </nav>
+
+    <main class="flex-grow flex overflow-hidden">
+        <!-- Group List (Main Screen) -->
+        <div id="group-list-screen" class="w-full overflow-y-auto p-8">
+            <h2 class="text-2xl font-bold mb-6 text-gray-800">所属グループ一覧</h2>
+            <div id="groups-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Cards injected here -->
+                <p class="text-gray-500">読み込み中...</p>
+            </div>
+        </div>
+
+        <!-- Group Detailed View (Hidden initially) -->
+        <div id="chat-screen" class="hidden w-full flex overflow-hidden">
+            <!-- Channel Sidebar -->
+            <aside class="w-64 bg-white border-r flex flex-col shadow-sm">
+                <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
+                    <h3 id="selected-group-name" class="font-bold truncate">グループ名</h3>
+                </div>
+                <div class="p-4 flex-grow overflow-y-auto space-y-2">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">チャネル</span>
+                        <button id="btn-add-channel" onclick="createNewChannel()" class="text-indigo-600 hover:text-indigo-800 text-xl font-bold hidden">+</button>
+                    </div>
+                    <div id="channel-list" class="space-y-1">
+                        <!-- Channels injected here -->
+                    </div>
+                </div>
+                <div class="p-4 border-t">
+                    <button onclick="exitGroup()" class="w-full text-sm text-gray-500 hover:text-indigo-600 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="11 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0 8.959 8.959 0 01-9 9m-9-9a9 9 0 019-9" />
+                        </svg>
+                        一覧に戻る
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Chat Area -->
+            <div class="flex-grow flex flex-col bg-white">
+                <header class="p-4 border-b flex justify-between items-center shadow-sm">
+                    <div>
+                        <h2 id="current-channel-name" class="font-bold text-lg text-gray-800"># 一般</h2>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button id="btn-start-meeting" onclick="startMeeting()" class="bg-green-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-700 flex items-center gap-2 shadow-sm transition">
+                            <span>📹</span> 会議を開始
+                        </button>
+                    </div>
+                </header>
+
+                <div id="chat-messages" class="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50">
+                    <!-- Messages -->
+                    <div class="text-center text-gray-400 mt-10">チャネルを選択してください</div>
+                </div>
+
+                <div class="p-4 border-t bg-white">
+                    <div class="flex gap-2">
+                        <input type="text" id="msg-input" placeholder="メッセージを入力..." class="flex-grow border rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner">
+                        <button onclick="sendMessage()" class="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-indigo-700 shadow-md transition">送信</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="js/gakutalk.js"></script>
+    <script>
+        function goBack() {
+            // Check role to redirect
+            if(!currentUser) return window.location.href = 'login.html';
+            db.collection('users').doc(currentUser.uid).get().then(doc => {
+                if(doc.exists) {
+                    const role = doc.data().role;
+                    if(role === 'student') window.location.href = 'student-dashboard.html';
+                    else if(role === 'teacher') window.location.href = 'teacher-dashboard.html';
+                    else window.location.href = 'super-admin.html';
+                }
+            });
+        }
+    </script>
+</body>
+</html>

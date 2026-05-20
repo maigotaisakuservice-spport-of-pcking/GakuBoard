@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>デモ: ダッシュボード</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden mb-8">
+            <div class="bg-indigo-600 p-4 text-white flex justify-between">
+                <h2 class="font-bold text-xl">生徒用ダッシュボード (イメージ)</h2>
+                <span>1年A組 山田 太郎</span>
+            </div>
+            <div class="p-6 space-y-6">
+                <!-- Daily -->
+                <div class="border-l-4 border-yellow-400 pl-4">
+                    <h3 class="font-bold text-lg mb-2">今日の健康かんさつ</h3>
+                    <div class="flex gap-4 items-center bg-yellow-50 p-4 rounded">
+                        <span class="text-3xl">😊</span>
+                        <div>
+                            <p class="font-bold">元気です！</p>
+                            <p class="text-sm text-gray-500">体温: 36.5℃</p>
+                        </div>
+                        <span class="ml-auto text-green-600 font-bold">送信済み ✅</span>
+                    </div>
+                </div>
+
+                <!-- Apps -->
+                <div>
+                    <h3 class="font-bold text-lg mb-2">学習アプリ</h3>
+                    <div class="grid grid-cols-4 gap-4">
+                        <div class="bg-gray-50 p-4 rounded text-center">
+                            <div class="w-12 h-12 bg-blue-500 rounded mx-auto mb-2"></div>
+                            <span class="text-xs font-bold">ドリル</span>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded text-center">
+                            <div class="w-12 h-12 bg-green-500 rounded mx-auto mb-2"></div>
+                            <span class="text-xs font-bold">辞書</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div class="bg-gray-800 p-4 text-white flex justify-between">
+                <h2 class="font-bold text-xl">先生用ダッシュボード (イメージ)</h2>
+                <span>1年A組 担任</span>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="bg-blue-50 p-4 rounded border border-blue-200">
+                        <h3 class="font-bold text-blue-800 mb-2">提出状況</h3>
+                        <p class="text-3xl font-bold">28 / 30 <span class="text-sm font-normal text-gray-500">人</span></p>
+                    </div>
+                    <div class="bg-red-50 p-4 rounded border border-red-200">
+                        <h3 class="font-bold text-red-800 mb-2">要確認 (体調不良)</h3>
+                        <p class="text-3xl font-bold text-red-600">1 <span class="text-sm font-normal text-gray-500">人</span></p>
+                    </div>
+                </div>
+
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="p-2">名前</th>
+                            <th class="p-2">気分</th>
+                            <th class="p-2">体温</th>
+                            <th class="p-2">コメント</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="border-b">
+                            <td class="p-2">山田 太郎</td>
+                            <td class="p-2">😊</td>
+                            <td class="p-2">36.5</td>
+                            <td class="p-2"></td>
+                        </tr>
+                        <tr class="border-b bg-red-50">
+                            <td class="p-2 font-bold">鈴木 花子</td>
+                            <td class="p-2">😫</td>
+                            <td class="p-2 text-red-600 font-bold">37.8</td>
+                            <td class="p-2">頭が痛いです</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="mt-8 text-center">
+            <a href="index.html" class="bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600">デモ一覧に戻る</a>
+        </div>
+    </div>
+</body>
+</html>

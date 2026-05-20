@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>デモ: ホワイトボード</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <style>
+        canvas { touch-action: none; background: white; cursor: crosshair; }
+    </style>
+</head>
+<body class="bg-gray-200 h-screen flex flex-col">
+
+    <div class="bg-indigo-800 text-white p-4 flex justify-between items-center z-10">
+        <h1 class="font-bold">デモ: ホワイトボード</h1>
+        <div class="flex gap-2">
+            <input type="text" id="roomName" placeholder="部屋名 (例: demo1)" class="text-black px-2 py-1 rounded">
+            <button onclick="startHost()" class="bg-blue-500 px-3 py-1 rounded">先生として開始</button>
+            <button onclick="startGuest()" class="bg-green-500 px-3 py-1 rounded">生徒として参加</button>
+        </div>
+    </div>
+
+    <div class="flex-grow relative overflow-hidden">
+        <canvas id="board" class="absolute top-0 left-0 w-full h-full"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('board');
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+        let lastX=0, lastY=0;
+        let peer = null;
+        let conns = [];
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight - 60;
+        }
+        window.onresize = resize;
+        resize();
+
+        // Drawing
+        canvas.addEventListener('mousedown', e => start(e.clientX, e.clientY));
+        canvas.addEventListener('mousemove', e => move(e.clientX, e.clientY));
+        canvas.addEventListener('mouseup', end);
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); start(e.touches[0].clientX, e.touches[0].clientY); });
+        canvas.addEventListener('touchmove', e => { e.preventDefault(); move(e.touches[0].clientX, e.touches[0].clientY); });
+        canvas.addEventListener('touchend', end);
+
+        function start(x, y) {
+            drawing = true; lastX = x; lastY = y - 60;
+        }
+        function move(x, y) {
+            if(!drawing) return;
+            const cy = y - 60;
+            drawLine(lastX, lastY, x, cy, '#000');
+            broadcast({x0:lastX, y0:lastY, x1:x, y1:cy});
+            lastX = x; lastY = cy;
+        }
+        function end() { drawing = false; }
+
+        function drawLine(x0, y0, x1, y1, color) {
+            ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+            ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+        }
+
+        // P2P
+        function startHost() {
+            const room = document.getElementById('roomName').value || 'demo1';
+            const id = `gaku-demo-board-${room}`;
+            peer = new Peer(id);
+            peer.on('open', id => alert(`先生(ホスト)として開始: ${id}`));
+            peer.on('error', e => alert("開始失敗(他に使われているかも): " + e.message));
+            peer.on('connection', conn => {
+                conns.push(conn);
+                conn.on('data', d => drawLine(d.x0, d.y0, d.x1, d.y1, 'red'));
+            });
+        }
+
+        function startGuest() {
+            const room = document.getElementById('roomName').value || 'demo1';
+            const hostId = `gaku-demo-board-${room}`;
+            peer = new Peer();
+            peer.on('open', () => {
+                const conn = peer.connect(hostId);
+                conn.on('open', () => {
+                    alert("接続しました！書くと先生側に赤色で表示されます");
+                    conns.push(conn);
+                });
+                conn.on('data', d => drawLine(d.x0, d.y0, d.x1, d.y1, 'black'));
+            });
+        }
+
+        function broadcast(data) {
+            conns.forEach(c => c.send(data));
+        }
+    </script>
+</body>
+</html>

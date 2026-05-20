@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAKU-Board ホワイトボード</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/firebase-init.js"></script>
+    <script src="js/ai-service.js"></script>
+
+    <!-- PeerJS -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+
+    <style>
+        body, html { margin: 0; overflow: hidden; height: 100%; background: #eee; }
+        #canvas-container {
+            position: absolute; top: 50px; left: 0; right: 0; bottom: 0;
+            background: white;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        canvas { display: block; }
+
+        .toolbar {
+            position: absolute; top: 0; left: 0; width: 100%; height: 50px;
+            background: #2c3e50; color: white; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; box-sizing: border-box;
+            z-index: 10;
+        }
+        .tool-group { display: flex; gap: 10px; }
+        .btn-tool {
+            background: #34495e; color: white; border: 1px solid #7f8c8d;
+            padding: 5px 10px; border-radius: 3px; cursor: pointer;
+        }
+        .btn-tool.active { background: #2ecc71; border-color: #27ae60; }
+        .btn-tool.ai-active { background: #8e44ad; border-color: #9b59b6; }
+
+        #statusDisplay { font-size: 0.8em; color: #bbb; }
+        .color-picker { width: 30px; height: 30px; padding: 0; border: none; }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <div class="tool-group">
+            <button onclick="exitBoard()" class="btn-tool"><i class="fas fa-arrow-left"></i> 退出</button>
+            <span id="roleDisplay" style="font-weight:bold; margin-top:5px;">Loading...</span>
+            <span id="boardNameDisplay" class="ml-2 text-sm text-gray-300"></span>
+        </div>
+
+        <div class="tool-group">
+            <button onclick="changePage(-1)" class="btn-tool"><i class="fas fa-chevron-left"></i></button>
+            <span id="pageDisplay" class="text-white font-bold mt-1">1 / 6</span>
+            <button onclick="changePage(1)" class="btn-tool"><i class="fas fa-chevron-right"></i></button>
+        </div>
+
+        <div class="tool-group">
+            <button class="btn-tool active" id="penBtn" onclick="setTool('pen')"><i class="fas fa-pen"></i></button>
+            <button class="btn-tool" id="aiPenBtn" onclick="setTool('ai_pen')" title="AI Magic Pen"><i class="fas fa-magic"></i></button>
+            <button class="btn-tool" id="eraserBtn" onclick="setTool('eraser')"><i class="fas fa-eraser"></i></button>
+            <input type="color" id="colorPicker" class="color-picker" value="#000000" onchange="setColor(this.value)">
+            <button class="btn-tool" onclick="clearBoard()"><i class="fas fa-trash"></i></button>
+        </div>
+
+        <div class="tool-group">
+            <span id="statusDisplay">Connecting...</span>
+            <!-- NEW: Settings and Webhook -->
+            <button id="wbBroadcastBtn" class="btn-tool" style="display:none;" onclick="openBroadcastSettings()" title="Broadcast Target"><i class="fas fa-users"></i></button>
+            <button id="wbSettingsBtn" class="btn-tool" style="display:none;" onclick="openSettings()" title="Settings"><i class="fas fa-cog"></i></button>
+            <button id="wbSendBtn" class="btn-tool" style="display:none;" onclick="finishAndSend()" title="Finish & Send"><i class="fas fa-paper-plane"></i></button>
+
+            <button id="studentDrawToggle" class="btn-tool" style="display:none;" onclick="toggleStudentDraw()">
+                <i class="fas fa-pencil-alt"></i> 生徒書き込み: <span id="studentDrawStatus">OFF</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Webhook Settings Modal -->
+    <div id="settings-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.5); z-index:20;">
+        <h3 style="margin-top:0;">設定</h3>
+        <label style="display:block; margin-bottom:5px;">Webhook URL (Teams/Google):</label>
+        <input type="text" id="webhook-url" style="width:100%; padding:5px; margin-bottom:10px;" placeholder="https://hooks.slack.com/...">
+        <div style="text-align:right;">
+            <button onclick="saveSettings()" style="background:#2ecc71; color:white; border:none; padding:5px 10px; border-radius:3px;">保存</button>
+            <button onclick="document.getElementById('settings-modal').style.display='none'" style="background:#95a5a6; color:white; border:none; padding:5px 10px; border-radius:3px;">閉じる</button>
+        </div>
+    </div>
+
+    <!-- Broadcast Target Modal -->
+    <div id="broadcast-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.5); z-index:20; max-height:80vh; overflow-y:auto; min-width:300px;">
+        <h3 style="margin-top:0;">配信先設定</h3>
+        <div style="margin-bottom:10px;">
+            <label><input type="radio" name="broadcast-target" value="all" checked onchange="toggleStudentList(false)"> 全員 (クラス全体)</label>
+        </div>
+        <div style="margin-bottom:10px;">
+            <label><input type="radio" name="broadcast-target" value="select" onchange="toggleStudentList(true)"> 生徒を選択</label>
+        </div>
+
+        <div id="student-selection-list" style="display:none; border:1px solid #ccc; padding:10px; margin-bottom:10px; max-height:200px; overflow-y:auto;">
+            <p style="color:#888;">読み込み中...</p>
+        </div>
+
+        <div style="margin-top:10px; border-top:1px solid #eee; padding-top:10px;">
+            <label style="font-weight:bold; color:#e74c3c; cursor:pointer;">
+                <input type="checkbox" id="force-project-check"> 生徒の画面に強制表示する
+            </label>
+            <p style="font-size:0.8em; color:#666;">※ 生徒がダッシュボードを開いている場合、自動的にこのボードに遷移します。</p>
+        </div>
+
+        <div style="text-align:right; margin-top:10px;">
+            <button onclick="saveBroadcastSettings()" style="background:#3498db; color:white; border:none; padding:5px 10px; border-radius:3px;">適用</button>
+            <button onclick="document.getElementById('broadcast-modal').style.display='none'" style="background:#95a5a6; color:white; border:none; padding:5px 10px; border-radius:3px;">閉じる</button>
+        </div>
+    </div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="whiteboard"></canvas>
+    </div>
+
+    <script>
+        // URL Params
+        const params = new URLSearchParams(window.location.search);
+        const classId = params.get('classId');
+        const boardId = params.get('boardId');
+        const boardName = params.get('name') || 'Whiteboard';
+        const mode = params.get('mode'); // 'teacher' or 'student'
+
+        // Canvas Setup
+        const canvas = document.getElementById('whiteboard');
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let currentTool = 'pen';
+        let currentColor = '#000000';
+        let currentWidth = 2;
+
+        // Pagination
+        let currentPage = 0;
+        const maxPages = 6;
+        const pageData = new Array(maxPages).fill(null);
+
+        // Load page content after init if available
+        setTimeout(() => {
+             if(pageData[currentPage]) {
+                 const img = new Image();
+                 img.onload = () => ctx.drawImage(img, 0, 0);
+                 img.src = pageData[currentPage];
+             }
+        }, 500);
+
+        // AI Pen State
+        let aiStrokePoints = [];
+        let aiProcessing = false;
+
+        // P2P State
+        let peer;
+        let connections = []; // Teacher: list of student conns. Student: [teacherConn]
+        let canDraw = (mode === 'teacher'); // Default permission
+
+        // Persistence (IndexedDB)
+        const dbName = 'GakuBoardDB';
+        const storeName = 'snapshots';
+        const dbKey = `${classId}_${boardId}`;
+        let db = null;
+
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(dbName, 1);
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains(storeName)) {
+                        db.createObjectStore(storeName);
+                    }
+                };
+                request.onsuccess = (event) => {
+                    db = event.target.result;
+                    resolve(db);
+                };
+                request.onerror = (event) => {
+                    console.error("IDB Error", event);
+                    reject(event);
+                };
+            });
+        }
+
+        async function saveToLocal() {
+            if (!db) await initDB();
+            pageData[currentPage] = canvas.toDataURL();
+
+            const tx = db.transaction([storeName], 'readwrite');
+            const store = tx.objectStore(storeName);
+            // Store the whole array
+            store.put(pageData, dbKey);
+        }
+
+        async function restoreFromLocal() {
+            if (!db) await initDB();
+            return new Promise((resolve) => {
+                const tx = db.transaction([storeName], 'readonly');
+                const store = tx.objectStore(storeName);
+                const req = store.get(dbKey);
+
+                req.onsuccess = (event) => {
+                    const data = event.target.result;
+                    if (data && Array.isArray(data)) {
+                        for(let i=0; i<maxPages; i++) {
+                            if(data[i]) pageData[i] = data[i];
+                        }
+                    }
+                    resolve();
+                };
+                req.onerror = () => resolve(); // Fail safe
+            });
+        }
+
+        function resizeCanvas() {
+            // Save current content before resize clears it
+            const currentContent = canvas.toDataURL();
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight - 50;
+
+            // Restore
+            const img = new Image();
+            img.onload = () => ctx.drawImage(img, 0, 0);
+            img.src = currentContent;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas(); // Initial sizing
+
+        // Load initial data
+        restoreFromLocal().then(() => {
+            loadCurrentPageFromMemory();
+        });
+
+        // ------------------
+        // Auth & Init
+        // ------------------
+        auth.onAuthStateChanged(async user => {
+            if (!user) {
+                window.location.href = 'login.html';
+                return;
+            }
+            if (!classId || !boardId) return alert("Class/Board ID missing");
+
+            document.getElementById('roleDisplay').textContent = mode === 'teacher' ? '先生モード' : '生徒モード';
+            document.getElementById('boardNameDisplay').textContent = decodeURIComponent(boardName);
+
+            if (mode === 'teacher') {
+                initTeacher(user);
+                document.getElementById('studentDrawToggle').style.display = 'block';
+                document.getElementById('wbBroadcastBtn').style.display = 'block';
+                document.getElementById('wbSettingsBtn').style.display = 'block';
+                document.getElementById('wbSendBtn').style.display = 'block';
+
+                // Load Webhook URL from Firestore (Class Config)
+                try {
+                    const classDoc = await db.collection('classes').doc(classId).get();
+                    if(classDoc.exists && classDoc.data().webhookUrl) {
+                        document.getElementById('webhook-url').value = classDoc.data().webhookUrl;
+                    }
+                } catch(e) {
+                    console.error("Failed to load class webhook config", e);
+                }
+
+                // Check AI Config
+                db.collection('users').doc(user.uid).get().then(doc => {
+                    const tenantId = doc.data().tenantId;
+                    AIService.getConfig(tenantId).then(config => {
+                        if(!config.enabled) {
+                            const btn = document.getElementById('aiPenBtn');
+                            if(btn) btn.style.display = 'none';
+                        }
+                    }).catch(e => {
+                        const btn = document.getElementById('aiPenBtn');
+                        if(btn) btn.style.display = 'none';
+                    });
+                });
+
+                // Cleanup on exit
+                window.addEventListener('beforeunload', () => {
+                     db.collection('classes').doc(classId).collection('active_boards').doc(boardId).delete();
+                });
+            } else {
+                initStudent(user);
+                document.getElementById('aiPenBtn').remove();
+            }
+        });
+
+        function openSettings() {
+            document.getElementById('settings-modal').style.display = 'block';
+        }
+
+        async function saveSettings() {
+            const url = document.getElementById('webhook-url').value;
+            // Save to Class Config in Firestore
+            try {
+                await db.collection('classes').doc(classId).set({
+                    webhookUrl: url
+                }, { merge: true });
+                document.getElementById('settings-modal').style.display = 'none';
+                alert("クラス設定として保存しました。他の先生とも共有されます。");
+            } catch(e) {
+                console.error(e);
+                alert("保存に失敗しました");
+            }
+        }
+
+        // Broadcast Logic
+        let cachedStudents = null;
+        async function openBroadcastSettings() {
+            document.getElementById('broadcast-modal').style.display = 'block';
+            if(!cachedStudents) {
+                const list = document.getElementById('student-selection-list');
+
+                // Fetch students in this class
+                // Since we don't have full query power easily without index, we query users by classId
+                // Wait, users store 'classId'.
+                try {
+                     const snap = await db.collection('users').where('classId', '==', classId).where('role', '==', 'student').get();
+                     cachedStudents = [];
+                     snap.forEach(d => cachedStudents.push({id: d.id, ...d.data()}));
+
+                     // Also check affiliations if possible? For now, stick to primary class.
+
+                     renderStudentList();
+                } catch(e) {
+                     list.innerHTML = "読み込みエラー: " + e.message;
+                }
+            }
+        }
+
+        function toggleStudentList(show) {
+            document.getElementById('student-selection-list').style.display = show ? 'block' : 'none';
+        }
+
+        function renderStudentList() {
+            const list = document.getElementById('student-selection-list');
+            if(!cachedStudents || cachedStudents.length === 0) {
+                list.innerHTML = "生徒が見つかりません";
+                return;
+            }
+            list.innerHTML = '';
+            cachedStudents.sort((a,b) => (a.attendanceNumber || 999) - (b.attendanceNumber || 999));
+
+            cachedStudents.forEach(s => {
+                const div = document.createElement('div');
+                div.innerHTML = `<label><input type="checkbox" class="student-chk" value="${s.id}"> ${s.attendanceNumber || ''} ${s.name}</label>`;
+                list.appendChild(div);
+            });
+        }
+
+        async function saveBroadcastSettings() {
+            const radios = document.getElementsByName('broadcast-target');
+            let target = 'all';
+            for(const r of radios) if(r.checked) target = r.value;
+
+            let allowed = 'all';
+            if(target === 'select') {
+                const chks = document.querySelectorAll('.student-chk:checked');
+                allowed = Array.from(chks).map(c => c.value);
+            }
+
+            const forceProject = document.getElementById('force-project-check').checked;
+
+            // Update Board Doc
+            await db.collection('classes').doc(classId).collection('active_boards').doc(boardId).update({
+                allowedStudents: allowed,
+                forceProject: forceProject
+            });
+
+            document.getElementById('broadcast-modal').style.display = 'none';
+            alert("配信設定を更新しました" + (forceProject ? " (強制表示ON)" : ""));
+        }
+
+        async function finishAndSend() {
+            if(!confirm("ホワイトボードを終了し、画像を保存・送信しますか？(全ページ)")) return;
+
+            document.getElementById('statusDisplay').textContent = "Saving...";
+
+            // Save current page first
+            pageData[currentPage] = canvas.toDataURL('image/png');
+
+            // 1. Download Local Copies (All pages with content)
+            // User requested "Batch Save". We will just loop.
+            // Note: Some browsers block multiple downloads.
+            let savedCount = 0;
+            let imagesForWebhook = [];
+
+            for (let i = 0; i < maxPages; i++) {
+                if (pageData[i]) {
+                    const a = document.createElement('a');
+                    a.href = pageData[i];
+                    a.download = `whiteboard_${decodeURIComponent(boardName)}_p${i+1}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    savedCount++;
+
+                    imagesForWebhook.push({
+                         "type": "Image",
+                         "url": pageData[i],
+                         "size": "Large"
+                    });
+
+                    await new Promise(r => setTimeout(r, 200)); // Delay for browser download limit
+                }
+            }
+
+            // 2. Webhook (Base64 - Send All Pages)
+            let webhookUrl = document.getElementById('webhook-url').value;
+
+            if(webhookUrl && imagesForWebhook.length > 0) {
+                document.getElementById('statusDisplay').textContent = "Sending Webhook...";
+                try {
+                    // Adaptive Card with ALL Images
+                    const payload = {
+                        "type": "message",
+                        "attachments": [
+                            {
+                                "contentType": "application/vnd.microsoft.card.adaptive",
+                                "contentUrl": null,
+                                "content": {
+                                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                                    "type": "AdaptiveCard",
+                                    "version": "1.2",
+                                    "body": [
+                                        {
+                                            "type": "TextBlock",
+                                            "text": `[GAKU-Board] ホワイトボード「${decodeURIComponent(boardName)}」が終了しました`,
+                                            "size": "Medium",
+                                            "weight": "Bolder"
+                                        },
+                                        {
+                                            "type": "TextBlock",
+                                            "text": `計 ${savedCount} 枚のボード画像が送信されました。`,
+                                            "size": "Small",
+                                            "wrap": true
+                                        },
+                                        ...imagesForWebhook
+                                    ]
+                                }
+                            }
+                        ]
+                    };
+
+                    await fetch(webhookUrl, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    alert("Webhookへ送信しました");
+                } catch(e) {
+                    console.error(e);
+                    alert("Webhook送信に失敗しました");
+                }
+            }
+
+            document.getElementById('statusDisplay').textContent = "Finished";
+        }
+
+        // --- Pagination Logic ---
+        function changePage(delta, broadcastMove = true) {
+            const next = Math.max(0, Math.min(maxPages - 1, currentPage + delta));
+            if (next === currentPage) return;
+
+            // Save current
+            pageData[currentPage] = canvas.toDataURL();
+
+            // Load next
+            currentPage = next;
+            document.getElementById('pageDisplay').textContent = `${currentPage + 1} / ${maxPages}`;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (pageData[currentPage]) {
+                const img = new Image();
+                img.onload = () => ctx.drawImage(img, 0, 0);
+                img.src = pageData[currentPage];
+            }
+
+            if(broadcastMove && mode === 'teacher') {
+                broadcast({ type: 'change_page', pageIndex: currentPage });
+            }
+        }
+
+        // ------------------
+        // PeerJS Setup
+        // ------------------
+        function initTeacher(user) {
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                secure: true
+            });
+
+            peer.on('open', (id) => {
+                console.log('My Peer ID:', id);
+                document.getElementById('statusDisplay').textContent = 'Online (Waiting for students)';
+
+                // Register Board
+                db.collection('classes').doc(classId).collection('active_boards').doc(boardId).set({
+                    name: decodeURIComponent(boardName),
+                    hostPeerId: id,
+                    studentCanDraw: false,
+                    studentCount: 0,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            });
+
+            peer.on('connection', (conn) => {
+                console.log('Student connected:', conn.peer);
+                connections.push(conn);
+
+                conn.on('data', (data) => {
+                    handleData(data);
+                    // Relay to others if teacher
+                    broadcast(data, conn.peer);
+                });
+
+                conn.on('close', () => {
+                    connections = connections.filter(c => c !== conn);
+                });
+            });
+        }
+
+        function initStudent(user) {
+            // Increment Count
+            const boardRef = db.collection('classes').doc(classId).collection('active_boards').doc(boardId);
+            boardRef.update({
+                studentCount: firebase.firestore.FieldValue.increment(1)
+            });
+
+            // Decrement on exit
+            window.addEventListener('beforeunload', () => {
+                 boardRef.update({
+                    studentCount: firebase.firestore.FieldValue.increment(-1)
+                });
+            });
+
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                secure: true
+            });
+
+            peer.on('open', () => {
+                // Get Host PeerID from Firestore
+                boardRef.onSnapshot(doc => {
+                    if(!doc.exists) {
+                        alert("先生がボードを閉じました");
+                        window.close();
+                        window.location.href = 'student-dashboard.html';
+                        return;
+                    }
+
+                    const data = doc.data();
+
+                    // Access Control Check
+                    if (data.allowedStudents && data.allowedStudents !== 'all') {
+                         if (!data.allowedStudents.includes(user.uid)) {
+                             // Block access
+                             document.body.innerHTML = '<div style="display:flex;height:100vh;justify-content:center;align-items:center;flex-direction:column"><h1>アクセス権がありません</h1><p>このホワイトボードは特定の生徒のみに公開されています。</p></div>';
+                             if(peer) peer.destroy();
+                             return;
+                         }
+                    }
+
+                    const hostId = data.hostPeerId;
+
+                    if (data.studentCanDraw !== undefined) {
+                        canDraw = data.studentCanDraw;
+                        document.getElementById('statusDisplay').textContent =
+                            canDraw ? '書き込み可能' : '閲覧のみ';
+                    }
+
+                    if (hostId && (!connections.length || connections[0].peer !== hostId)) {
+                        connectToTeacher(hostId);
+                    }
+                });
+            });
+        }
+
+        function connectToTeacher(hostId) {
+            document.getElementById('statusDisplay').textContent = 'Connecting to Teacher...';
+            const conn = peer.connect(hostId);
+
+            conn.on('open', () => {
+                document.getElementById('statusDisplay').textContent = 'Connected';
+                connections = [conn];
+            });
+
+            conn.on('data', (data) => {
+                handleData(data);
+            });
+        }
+
+        function handleData(data) {
+            if (data.type === 'draw') {
+                drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width);
+            } else if (data.type === 'clear') {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            } else if (data.type === 'erase_area') {
+                ctx.fillStyle = 'white';
+                ctx.fillRect(data.x, data.y, data.w, data.h);
+            } else if (data.type === 'shape') {
+                drawShapeLocal(data);
+            } else if (data.type === 'change_page') {
+                // Sync Page
+                // Force save current locally just in case? No, viewer is passive.
+                pageData[currentPage] = canvas.toDataURL();
+                currentPage = data.pageIndex;
+                document.getElementById('pageDisplay').textContent = `${currentPage + 1} / ${maxPages}`;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (pageData[currentPage]) {
+                    const img = new Image();
+                    img.onload = () => ctx.drawImage(img, 0, 0);
+                    img.src = pageData[currentPage];
+                }
+            }
+        }
+
+        // ------------------
+        // Drawing Logic
+        // ------------------
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            if (e.touches) {
+                return {
+                    x: e.touches[0].clientX - rect.left,
+                    y: e.touches[0].clientY - rect.top
+                };
+            }
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+
+        function startDraw(e) {
+            if (!canDraw) return;
+            drawing = true;
+            const pos = getPos(e);
+            lastX = pos.x;
+            lastY = pos.y;
+
+            if(currentTool === 'ai_pen') {
+                aiStrokePoints = [{x: lastX, y: lastY}];
+            }
+
+            e.preventDefault();
+        }
+
+        function moveDraw(e) {
+            if (!drawing || !canDraw) return;
+            e.preventDefault();
+            const pos = getPos(e);
+
+            // Draw locally
+            drawOnCanvas(lastX, lastY, pos.x, pos.y, currentColor, currentWidth);
+
+            // Broadcast if normal pen
+            if(currentTool !== 'ai_pen') {
+                const data = {
+                    type: 'draw',
+                    x0: lastX, y0: lastY,
+                    x1: pos.x, y1: pos.y,
+                    color: currentColor,
+                    width: currentWidth
+                };
+                if (mode === 'teacher') broadcast(data);
+                else if (connections.length > 0) connections[0].send(data);
+            } else {
+                // AI Pen: Just accumulate points, assume visual feedback is local for now.
+                // Or we can broadcast rough stroke too? Let's just broadcast rough stroke so others see it.
+                // Then on mouseup we replace it.
+                const data = {
+                    type: 'draw',
+                    x0: lastX, y0: lastY,
+                    x1: pos.x, y1: pos.y,
+                    color: currentColor,
+                    width: currentWidth
+                };
+                if (mode === 'teacher') broadcast(data); // Send rough stroke
+                aiStrokePoints.push({x: pos.x, y: pos.y});
+            }
+
+            lastX = pos.x;
+            lastY = pos.y;
+        }
+
+        async function endDraw(e) {
+            drawing = false;
+            saveToLocal(); // Save on stroke end
+
+            if(currentTool === 'ai_pen' && aiStrokePoints.length > 10) {
+                // Process AI
+                await processAIShape();
+            }
+            aiStrokePoints = [];
+        }
+
+        async function processAIShape() {
+            if(aiProcessing) return;
+            aiProcessing = true;
+            document.getElementById('statusDisplay').textContent = "AI Processing...";
+
+            // 1. Capture Bounding Box of Stroke
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            aiStrokePoints.forEach(p => {
+                if(p.x < minX) minX = p.x;
+                if(p.y < minY) minY = p.y;
+                if(p.x > maxX) maxX = p.x;
+                if(p.y > maxY) maxY = p.y;
+            });
+
+            // Add padding
+            const pad = 20;
+            minX = Math.max(0, minX - pad);
+            minY = Math.max(0, minY - pad);
+            maxX = Math.min(canvas.width, maxX + pad);
+            maxY = Math.min(canvas.height, maxY + pad);
+            const w = maxX - minX;
+            const h = maxY - minY;
+
+            if(w <= 0 || h <= 0) { aiProcessing = false; return; }
+
+            // 2. Extract Image Data
+            const imgData = ctx.getImageData(minX, minY, w, h);
+
+            // Convert to Base64 (Using temp canvas)
+            const tCanvas = document.createElement('canvas');
+            tCanvas.width = w;
+            tCanvas.height = h;
+            const tCtx = tCanvas.getContext('2d');
+            tCtx.putImageData(imgData, 0, 0);
+            const dataUrl = tCanvas.toDataURL('image/png');
+            const base64 = dataUrl.split(',')[1];
+
+            // 3. Call AI
+            try {
+                // Need tenantId. Get from user doc? Or pass in params?
+                // We are in whiteboard context, auth.currentUser is available.
+                const user = auth.currentUser;
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                const tenantId = userDoc.data().tenantId;
+
+                const result = await AIService.recognizeShape(tenantId, base64);
+                console.log("AI Shape:", result);
+
+                if (result.shape && result.shape !== 'unknown') {
+                    // 4. Erase Rough Stroke (Broadcast Erase Area)
+                    // We simply clear the area (simple approach) or draw white box?
+                    // ClearRect is dangerous if overlapping other things.
+                    // Better: Draw a white rectangle over the bounding box to "erase".
+                    // (Assuming white background).
+
+                    const eraseData = { type: 'erase_area', x: minX, y: minY, w: w, h: h };
+                    if (mode === 'teacher') broadcast(eraseData);
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(minX, minY, w, h);
+
+                    // 5. Draw Perfect Shape
+                    // Result coords are 0-1 relative to the snippet.
+                    // Map back to canvas coords.
+                    const finalX = minX + (result.x * w);
+                    const finalY = minY + (result.y * h);
+                    const finalW = result.width * w;
+                    const finalH = result.height * h; // Note: if circle, might be r
+
+                    if (result.type === 'shape' || result.shape) {
+                        // Handle Shape (Legacy support for result.shape)
+                        const sType = result.shape || result.type;
+
+                        const shapeData = {
+                            type: 'shape',
+                            shape: result.shape, // e.g. 'rectangle'
+                            x: finalX, y: finalY, w: finalW, h: finalH,
+                            color: currentColor
+                        };
+
+                        if (mode === 'teacher') broadcast(shapeData);
+                        drawShapeLocal(shapeData);
+
+                    } else if (result.type === 'text') {
+                        // Handle Text
+                        const textData = {
+                            type: 'text',
+                            text: result.text,
+                            x: minX + (result.x * w), // Approximate pos
+                            y: minY + (result.y * h) + (result.fontSize || 20), // Y is usually baseline
+                            color: currentColor,
+                            font: (result.fontSize || 20) + "px sans-serif"
+                        };
+
+                        if (mode === 'teacher') broadcast(textData);
+                        drawTextLocal(textData);
+                    }
+                }
+            } catch(e) {
+                console.error(e);
+            } finally {
+                aiProcessing = false;
+                document.getElementById('statusDisplay').textContent = "Online";
+            }
+        }
+
+        function drawShapeLocal(d) {
+             ctx.beginPath();
+             ctx.strokeStyle = d.color;
+             ctx.lineWidth = 3;
+
+             if (d.shape.toLowerCase() === 'rectangle' || d.shape.toLowerCase() === 'square') {
+                 ctx.rect(d.x, d.y, d.w, d.h);
+             } else if (d.shape.toLowerCase() === 'circle') {
+                 ctx.arc(d.x + d.w/2, d.y + d.h/2, d.w/2, 0, 2*Math.PI);
+             } else if (d.shape.toLowerCase() === 'triangle') {
+                 ctx.moveTo(d.x + d.w/2, d.y);
+                 ctx.lineTo(d.x + d.w, d.y + d.h);
+                 ctx.lineTo(d.x, d.y + d.h);
+                 ctx.closePath();
+             } else if (d.shape.toLowerCase() === 'line') {
+                 ctx.moveTo(d.x, d.y);
+                 ctx.lineTo(d.x + d.w, d.y + d.h);
+             }
+
+             ctx.stroke();
+        }
+
+        function drawTextLocal(d) {
+            ctx.font = d.font || "20px sans-serif";
+            ctx.fillStyle = d.color;
+            ctx.fillText(d.text, d.x, d.y);
+        }
+
+        function drawOnCanvas(x0, y0, x1, y1, color, width) {
+            ctx.beginPath();
+            ctx.moveTo(x0, y0);
+            ctx.lineTo(x1, y1);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        function broadcast(data, excludePeerId = null) {
+            connections.forEach(conn => {
+                if (conn.peer !== excludePeerId) {
+                    conn.send(data);
+                }
+            });
+        }
+
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active', 'ai-active'));
+
+            if(tool === 'pen') {
+                document.getElementById('penBtn').classList.add('active');
+                currentColor = document.getElementById('colorPicker').value;
+                currentWidth = 2;
+            } else if (tool === 'ai_pen') {
+                document.getElementById('aiPenBtn').classList.add('active', 'ai-active');
+                currentColor = document.getElementById('colorPicker').value;
+                currentWidth = 2;
+            } else {
+                document.getElementById('eraserBtn').classList.add('active');
+                currentColor = '#ffffff';
+                currentWidth = 20;
+            }
+        }
+
+        function setColor(color) {
+            setTool('pen');
+            currentColor = color;
+        }
+
+        async function clearBoard() {
+            if (mode !== 'teacher') return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            broadcast({ type: 'clear' });
+
+            // Clear page data logic
+            pageData[currentPage] = null; // actually clear the memory for this page
+            await saveToLocal(); // Persist cleared state
+        }
+
+        function toggleStudentDraw() {
+            if (mode !== 'teacher') return;
+            const statusSpan = document.getElementById('studentDrawStatus');
+            const isCurrentlyOff = statusSpan.textContent === 'OFF';
+
+            const newState = isCurrentlyOff;
+            statusSpan.textContent = newState ? 'ON' : 'OFF';
+
+            // Update Firestore
+            db.collection('classes').doc(classId).collection('active_boards').doc(boardId).update({
+                studentCanDraw: newState
+            });
+        }
+
+        function exitBoard() {
+            window.close();
+        }
+
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', moveDraw);
+        canvas.addEventListener('mouseup', endDraw);
+        canvas.addEventListener('mouseout', endDraw);
+
+        canvas.addEventListener('touchstart', startDraw, {passive: false});
+        canvas.addEventListener('touchmove', moveDraw, {passive: false});
+        canvas.addEventListener('touchend', endDraw);
+
+    </script>
+</body>
+</html>
